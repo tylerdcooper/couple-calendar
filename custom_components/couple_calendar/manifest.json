@@ -7,7 +7,6 @@
   "codeowners": ["@tylerdcooper"],
   "requirements": [],
   "dependencies": [],
-  "after_dependencies": ["google"],
   "iot_class": "cloud_polling",
   "config_flow": true
 }
