@@ -20,6 +20,8 @@ from .const import (
     DEFAULT_PERSON_A_COLOR, DEFAULT_PERSON_B_COLOR, DEFAULT_JOINT_COLOR,
 )
 
+VERSION = "1.1.0"
+
 _LOGGER = logging.getLogger(__name__)
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 
@@ -68,7 +70,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config={
             "_panel_custom": {
                 "name":                  "couple-calendar-panel",
-                "module_url":            f"/{STATIC_PATH}/couple-calendar-panel.js",
+                "module_url":            f"/{STATIC_PATH}/couple-calendar-panel.js?v={VERSION}",
                 "embed_iframe":          False,
                 "trust_external_script": False,
             },
