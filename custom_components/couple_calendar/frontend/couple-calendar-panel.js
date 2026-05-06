@@ -451,6 +451,7 @@ class CoupleCalendarPanel extends HTMLElement {
     if (ls.theme)        this._config.theme          = ls.theme;
     if (ls.timeFormat)   this._config.timeFormat     = ls.timeFormat;
     if (ls.firstDayOfWeek !== undefined) this._config.firstDayOfWeek = ls.firstDayOfWeek;
+    if (ls.defaultView)  this._config.defaultView    = ls.defaultView;
 
     this._view = this._config.defaultView;
     this._render();
@@ -1012,6 +1013,14 @@ class CoupleCalendarPanel extends HTMLElement {
               <option value="1" ${cfg.firstDayOfWeek===1?"selected":""}>Monday</option>
             </select>
           </div>
+          <div class="settings-row">
+            <label>Default view</label>
+            <select id="s-default-view">
+              <option value="month"  ${cfg.defaultView==="month" ?"selected":""}>Month</option>
+              <option value="week"   ${cfg.defaultView==="week"  ?"selected":""}>Week</option>
+              <option value="agenda" ${cfg.defaultView==="agenda"?"selected":""}>Agenda</option>
+            </select>
+          </div>
         </div>
         <button class="save-btn" id="cc-save-settings" style="background:${aColor};">Save Changes</button>
       </div>
@@ -1050,6 +1059,7 @@ class CoupleCalendarPanel extends HTMLElement {
       theme:        dr.querySelector("#s-theme")?.value || undefined,
       timeFormat:   dr.querySelector("#s-time")?.value  || undefined,
       firstDayOfWeek: parseInt(dr.querySelector("#s-fdow")?.value ?? this._config?.firstDayOfWeek ?? 0),
+      defaultView:  dr.querySelector("#s-default-view")?.value || undefined,
     };
     this._saveLocalSettings(patch);
     this._closeDrawer();
