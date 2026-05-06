@@ -193,7 +193,6 @@ function buildStyles(cfg) {
     font-size: 11px; color: ${p.textSub}; font-weight: 700;
     padding: 2px 4px; margin-top: 1px; cursor: pointer;
   }
-  .all-day-bar { height: 5px; border-radius: 3px; margin-bottom: 3px; }
 
   /* ── Week view ── */
   .week-view { display: flex; flex-direction: column; height: 100%; }
@@ -606,8 +605,9 @@ class CoupleCalendarPanel extends HTMLElement {
       <div class="main"           id="cc-main"></div>
       <div class="drawer-overlay" id="cc-drawer-overlay"></div>
       <div class="drawer"         id="cc-drawer"></div>
-      <div class="modal-overlay"  id="cc-modal-overlay"></div>
-      <div class="modal"          id="cc-modal"></div>
+      <div class="modal-overlay"  id="cc-modal-overlay">
+        <div class="modal"        id="cc-modal"></div>
+      </div>
     `;
 
     this.shadowRoot.innerHTML = "";
@@ -786,7 +786,11 @@ class CoupleCalendarPanel extends HTMLElement {
     const chips = events.slice(0, MAX).map(ev => {
       const idx = allEvents.indexOf(ev);
       if (!ev.start?.dateTime) {
-        return `<div class="all-day-bar" style="background:${ev._color};"></div>`;
+        // All-day: solid colored chip with title — same pattern as Google/Apple Calendar
+        const tc = textOnBg(ev._color);
+        return `<div class="event-chip" data-idx="${idx}"
+          style="background:${ev._color}; color:${tc}; border-left:none; font-weight:600;"
+          title="${ev.summary||"Event"}">${ev.summary||"Event"}</div>`;
       }
       const t = formatTime(new Date(ev.start.dateTime), this._config?.timeFormat === "24h");
       return `<div class="event-chip" data-idx="${idx}"
