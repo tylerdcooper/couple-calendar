@@ -71,7 +71,7 @@ class CoupleCalendarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="display",
             data_schema=vol.Schema({
-                vol.Required(CONF_FIRST_DAY_OF_WEEK, default=DEFAULT_FIRST_DAY_OF_WEEK): selector.selector({
+                vol.Required(CONF_FIRST_DAY_OF_WEEK, default=str(DEFAULT_FIRST_DAY_OF_WEEK)): selector.selector({
                     "select": {
                         "options": [
                             {"value": "0", "label": "Sunday"},
