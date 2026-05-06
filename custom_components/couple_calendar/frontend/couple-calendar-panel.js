@@ -814,6 +814,9 @@ class CoupleCalendarPanel extends HTMLElement {
   // ── Week view ─────────────────────────────────────────────────────────
 
   _renderWeekView(el) {
+    // Preserve scroll position across re-renders (e.g. auto-refresh)
+    const prevScroll = el.querySelector(".week-time-grid")?.scrollTop ?? null;
+
     const cfg    = this._config || {};
     const fdow   = cfg.firstDayOfWeek ?? 0;
     const use24  = cfg.timeFormat === "24h";
@@ -880,7 +883,7 @@ class CoupleCalendarPanel extends HTMLElement {
 
     setTimeout(() => {
       const tg = el.querySelector(".week-time-grid");
-      if (tg) tg.scrollTop = 7 * HOUR_H;
+      if (tg) tg.scrollTop = prevScroll !== null ? prevScroll : 7 * HOUR_H;
     }, 50);
 
     el.querySelectorAll(".week-event, .week-all-day-event").forEach(evEl =>
