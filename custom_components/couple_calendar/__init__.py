@@ -10,6 +10,7 @@ from homeassistant.components.frontend import (
     async_register_built_in_panel,
     async_remove_panel,
 )
+from homeassistant.components.http import StaticPathConfig
 
 from .const import (
     DOMAIN, PANEL_URL, PANEL_TITLE, PANEL_ICON, STATIC_PATH,
@@ -32,11 +33,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     # Serve the frontend JS file statically
-    hass.http.register_static_path(
-        f"/{STATIC_PATH}",
-        str(FRONTEND_DIR),
-        cache_headers=False,
-    )
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(f"/{STATIC_PATH}", str(FRONTEND_DIR), cache_headers=False)
+    ])
 
     data = {**entry.data, **entry.options}
     panel_config = {
