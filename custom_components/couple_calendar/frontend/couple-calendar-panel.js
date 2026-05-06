@@ -235,6 +235,7 @@ function buildStyles(cfg) {
   .hour-line { position: absolute; left: 0; right: 0; height: 1px; background: ${p.border}; pointer-events: none; }
   .now-line { position: absolute; left: 0; right: 0; height: 2px; background: ${p.today}; pointer-events: none; z-index: 5; }
   .now-line::before { content:""; width:10px; height:10px; border-radius:50%; background:${p.today}; position:absolute; left:-5px; top:-4px; }
+  .now-time-label { position: absolute; right: calc(100% + 6px); top: -8px; font-size: 10px; font-weight: 800; color: ${p.today}; white-space: nowrap; line-height: 1; }
   .week-event {
     position: absolute; left: 3px; right: 3px; border-radius: 6px;
     padding: 4px 7px; font-size: 12px; font-weight: 500; cursor: pointer;
@@ -851,6 +852,8 @@ class CoupleCalendarPanel extends HTMLElement {
 
     const now       = new Date();
     const nowMin    = now.getHours() * 60 + now.getMinutes();
+    const nowLabel  = formatTime(now, use24);
+    console.log(`[CoupleCalendar] now-line: ${now.toString()} | getHours()=${now.getHours()} getMinutes()=${now.getMinutes()} | nowMin=${nowMin} | top=${(nowMin/60)*HOUR_H}px`);
     const todayIdx  = days.findIndex(d => isSameDay(d, this._today));
     const hours     = Array.from({ length: 24 }, (_, h) => h);
 
@@ -875,8 +878,11 @@ class CoupleCalendarPanel extends HTMLElement {
         </div>`;
       }).join("");
 
+      const nowPx     = (nowMin / 60) * HOUR_H;
       const hourLines = hours.map(h => `<div class="hour-line" style="top:${h*HOUR_H}px;"></div>`).join("");
-      const nowLine   = di === todayIdx ? `<div class="now-line" style="top:${(nowMin/60)*HOUR_H}px;"></div>` : "";
+      const nowLine   = di === todayIdx
+        ? `<div class="now-line" style="top:${nowPx}px;"><span class="now-time-label">${nowLabel}</span></div>`
+        : "";
       const isToday   = di === todayIdx;
       return `<div class="week-day-time-col ${isToday ? "today-col" : ""}" style="height:${24*HOUR_H}px;">${hourLines}${nowLine}${blocks}</div>`;
     }).join("");
