@@ -219,7 +219,8 @@ function buildStyles(cfg) {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
     margin-bottom: 2px;
   }
-  .week-time-grid { display: flex; flex: 1; overflow-y: auto; }
+  .week-time-grid { display: flex; flex: 1; overflow-y: auto; scrollbar-width: none; }
+  .week-time-grid::-webkit-scrollbar { display: none; }
   .time-gutter { width: 56px; flex-shrink: 0; border-right: 1px solid ${p.border}; position: relative; }
   .time-label {
     height: 60px; display: flex; align-items: flex-start; justify-content: flex-end;
