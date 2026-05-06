@@ -6,6 +6,10 @@ from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.components.frontend import (
+    async_register_built_in_panel,
+    async_remove_panel,
+)
 
 from .const import (
     DOMAIN, PANEL_URL, PANEL_TITLE, PANEL_ICON, STATIC_PATH,
@@ -27,14 +31,13 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
-    # Serve frontend JS from within the component directory
+    # Serve the frontend JS file statically
     hass.http.register_static_path(
         f"/{STATIC_PATH}",
         str(FRONTEND_DIR),
         cache_headers=False,
     )
 
-    # Build panel config passed to the custom element as `panel.config`
     data = {**entry.data, **entry.options}
     panel_config = {
         "personA": {
@@ -51,24 +54,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "color":    DEFAULT_JOINT_COLOR,
             "calendar": data.get(CONF_JOINT_CALENDAR, ""),
         },
-        # Display preferences are managed client-side via the settings drawer.
-        # These are only used as initial defaults if localStorage has no value.
         "firstDayOfWeek": 0,
         "timeFormat":     "12h",
         "defaultView":    "month",
         "theme":          "dark",
     }
 
-    hass.components.frontend.async_register_built_in_panel(
-        component_name="custom",
+    async_register_built_in_panel(
+        hass,
+        "custom",
         sidebar_title=PANEL_TITLE,
         sidebar_icon=PANEL_ICON,
         frontend_url_path=PANEL_URL,
         config={
             "_panel_custom": {
-                "name":       "couple-calendar-panel",
-                "module_url": f"/{STATIC_PATH}/couple-calendar-panel.js",
-                "embed_iframe":        False,
+                "name":                  "couple-calendar-panel",
+                "module_url":            f"/{STATIC_PATH}/couple-calendar-panel.js",
+                "embed_iframe":          False,
                 "trust_external_script": False,
             },
             **panel_config,
@@ -85,6 +87,9 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    hass.components.frontend.async_remove_panel(PANEL_URL)
+    try:
+        async_remove_panel(hass, PANEL_URL)
+    except Exception:
+        pass
     hass.data[DOMAIN].pop("config", None)
     return True
