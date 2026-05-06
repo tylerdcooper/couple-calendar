@@ -219,7 +219,7 @@ function buildStyles(cfg) {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
     margin-bottom: 2px;
   }
-  .week-time-grid { display: flex; flex: 1; overflow-y: auto; scroll-behavior: smooth; }
+  .week-time-grid { display: flex; flex: 1; overflow-y: auto; }
   .time-gutter { width: 56px; flex-shrink: 0; border-right: 1px solid ${p.border}; position: relative; }
   .time-label {
     height: 60px; display: flex; align-items: flex-start; justify-content: flex-end;
@@ -881,10 +881,8 @@ class CoupleCalendarPanel extends HTMLElement {
         </div>
       </div>`;
 
-    setTimeout(() => {
-      const tg = el.querySelector(".week-time-grid");
-      if (tg) tg.scrollTop = prevScroll !== null ? prevScroll : 7 * HOUR_H;
-    }, 50);
+    const tg = el.querySelector(".week-time-grid");
+    if (tg) tg.scrollTop = prevScroll !== null ? prevScroll : 7 * HOUR_H;
 
     el.querySelectorAll(".week-event, .week-all-day-event").forEach(evEl =>
       evEl.addEventListener("click", e => {
