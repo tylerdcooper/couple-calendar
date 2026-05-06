@@ -226,7 +226,8 @@ function buildStyles(cfg) {
     padding: 0 8px; font-size: 11px; color: ${p.textSub}; margin-top: -8px;
   }
   .week-days-grid { flex: 1; display: grid; gap: 2px; position: relative; }
-  .week-day-time-col { position: relative; border-right: 1px solid ${p.border}40; }
+  .week-day-time-col { position: relative; border-right: 1px solid ${p.border}; }
+  .week-day-time-col.today-col { background: ${isDark ? "rgba(255,255,255,0.025)" : "rgba(0,0,0,0.025)"}; }
   .hour-line { position: absolute; left: 0; right: 0; height: 1px; background: ${p.border}; pointer-events: none; }
   .now-line { position: absolute; left: 0; right: 0; height: 2px; background: ${p.today}; pointer-events: none; z-index: 5; }
   .now-line::before { content:""; width:10px; height:10px; border-radius:50%; background:${p.today}; position:absolute; left:-5px; top:-4px; }
@@ -867,7 +868,8 @@ class CoupleCalendarPanel extends HTMLElement {
 
       const hourLines = hours.map(h => `<div class="hour-line" style="top:${h*HOUR_H}px;"></div>`).join("");
       const nowLine   = di === todayIdx ? `<div class="now-line" style="top:${(nowMin/60)*HOUR_H}px;"></div>` : "";
-      return `<div class="week-day-time-col" style="height:${24*HOUR_H}px;">${hourLines}${nowLine}${blocks}</div>`;
+      const isToday   = di === todayIdx;
+      return `<div class="week-day-time-col ${isToday ? "today-col" : ""}" style="height:${24*HOUR_H}px;">${hourLines}${nowLine}${blocks}</div>`;
     }).join("");
 
     const gc = "grid-template-columns: repeat(7, 1fr)";
@@ -876,7 +878,7 @@ class CoupleCalendarPanel extends HTMLElement {
         <div class="week-day-header" style="${gc}">${dayHeaders}</div>
         <div class="week-all-day-row" style="display:grid;${gc};">${allDayCells}</div>
         <div class="week-time-grid">
-          <div class="time-gutter">${timeGutter}</div>
+          <div class="time-gutter" style="min-height:${24*HOUR_H}px;">${timeGutter}</div>
           <div class="week-days-grid" style="${gc}">${timeCols}</div>
         </div>
       </div>`;
