@@ -105,6 +105,9 @@ function buildStyles(cfg) {
   .header-title { flex: 1; }
   .header-month { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; line-height: 1; }
   .header-year  { font-size: 14px; color: ${p.textSub}; margin-top: 2px; }
+  .header-clock { text-align: right; flex-shrink: 0; }
+  .header-clock-time { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; line-height: 1; }
+  .header-clock-date { font-size: 14px; color: ${p.textSub}; margin-top: 2px; }
   .today-btn {
     padding: 10px 20px; border-radius: 10px; border: 1px solid ${p.border};
     background: transparent; color: ${p.text}; cursor: pointer; font-size: 15px; font-weight: 500;
@@ -654,6 +657,10 @@ class CoupleCalendarPanel extends HTMLElement {
           <div class="header-year">${titleSub}</div>
         </div>
       </div>
+      <div class="header-clock" id="cc-clock">
+        <div class="header-clock-time" id="cc-clock-time"></div>
+        <div class="header-clock-date" id="cc-clock-date"></div>
+      </div>
       <button class="today-btn"   id="cc-today-btn">Today</button>
       <button class="refresh-btn" id="cc-refresh-btn" aria-label="Refresh">${ICON.refresh}</button>
       <div class="view-switcher">
@@ -662,6 +669,7 @@ class CoupleCalendarPanel extends HTMLElement {
         <button class="view-btn ${this._view==="agenda" ? "active":""}" data-view="agenda">Agenda</button>
       </div>
     `;
+    this._tickClock();
 
     el.querySelector("#cc-menu-btn").addEventListener("click", () => this._openDrawer());
     el.querySelector("#cc-prev-btn").addEventListener("click", () => this._navigate(-1));
@@ -1150,13 +1158,24 @@ class CoupleCalendarPanel extends HTMLElement {
     }, AUTO_REFRESH_MS);
   }
 
+  _tickClock() {
+    const now    = new Date();
+    const use24  = this._config?.timeFormat === "24h";
+    const timeEl = this.shadowRoot.getElementById("cc-clock-time");
+    const dateEl = this.shadowRoot.getElementById("cc-clock-date");
+    if (timeEl) timeEl.textContent = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: !use24 });
+    if (dateEl) dateEl.textContent = now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+  }
+
   _startClock() {
+    // Tick immediately, then every 10 seconds so the clock stays accurate
     setInterval(() => {
+      this._tickClock();
       const newToday = startOfDay(new Date());
       if (!isSameDay(newToday, this._today)) { this._today = newToday; this._renderMainContent(); }
       else if (this._view === "week") this._renderMainContent(); // move now-line
       this._renderLegend(); // tick "Updated Xm ago"
-    }, 60_000);
+    }, 10_000);
   }
 
   // ── localStorage ──────────────────────────────────────────────────────
