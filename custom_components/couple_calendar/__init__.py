@@ -1,6 +1,7 @@
 """Couple Calendar — beautiful shared calendar for two."""
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -20,10 +21,14 @@ from .const import (
     DEFAULT_PERSON_A_COLOR, DEFAULT_PERSON_B_COLOR, DEFAULT_JOINT_COLOR,
 )
 
-VERSION = "1.1.0"
-
 _LOGGER = logging.getLogger(__name__)
 FRONTEND_DIR = Path(__file__).parent / "frontend"
+JS_FILE = FRONTEND_DIR / "couple-calendar-panel.js"
+
+
+def _js_hash() -> str:
+    """Return first 12 chars of the JS file's MD5 — used as cache-buster."""
+    return hashlib.md5(JS_FILE.read_bytes()).hexdigest()[:12]
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -34,10 +39,17 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
-    # Serve the frontend JS file statically
+    # Serve frontend JS — cache_headers=True so the browser caches aggressively.
+    # Cache is busted automatically via the hash query-param in module_url below.
     await hass.http.async_register_static_paths([
-        StaticPathConfig(f"/{STATIC_PATH}", str(FRONTEND_DIR), cache_headers=False)
+        StaticPathConfig(f"/{STATIC_PATH}", str(FRONTEND_DIR), cache_headers=True)
     ])
+
+    # Compute hash of the JS file on disk. Whenever the file changes (after a
+    # HACS update + HA restart) the hash changes → new URL → browser fetches fresh.
+    js_hash = await hass.async_add_executor_job(_js_hash)
+    module_url = f"/{STATIC_PATH}/couple-calendar-panel.js?v={js_hash}"
+    _LOGGER.debug("Couple Calendar JS URL: %s", module_url)
 
     data = {**entry.data, **entry.options}
     panel_config = {
@@ -70,7 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config={
             "_panel_custom": {
                 "name":                  "couple-calendar-panel",
-                "module_url":            f"/{STATIC_PATH}/couple-calendar-panel.js?v={VERSION}",
+                "module_url":            module_url,
                 "embed_iframe":          False,
                 "trust_external_script": False,
             },
