@@ -227,7 +227,7 @@ function buildStyles(cfg) {
   .time-gutter { width: 56px; flex-shrink: 0; border-right: 1px solid ${p.border}; position: relative; }
   .time-label {
     height: 60px; display: flex; align-items: flex-start; justify-content: flex-end;
-    padding: 0 8px; font-size: 11px; color: ${p.textSub}; margin-top: -8px;
+    padding: 0 8px; font-size: 11px; color: ${p.textSub}; transform: translateY(-8px);
   }
   .week-days-grid { flex: 1; display: grid; gap: 2px; position: relative; }
   .week-day-time-col { position: relative; border-right: 1px solid ${p.border}; }
@@ -850,10 +850,8 @@ class CoupleCalendarPanel extends HTMLElement {
         }).join("")}
       </div>`).join("");
 
-    const now       = new Date();
-    const nowMin    = now.getHours() * 60 + now.getMinutes();
-    const nowLabel  = formatTime(now, use24);
-    console.log(`[CoupleCalendar] now-line: ${now.toString()} | getHours()=${now.getHours()} getMinutes()=${now.getMinutes()} | nowMin=${nowMin} | top=${(nowMin/60)*HOUR_H}px`);
+    const now    = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
     const todayIdx  = days.findIndex(d => isSameDay(d, this._today));
     const hours     = Array.from({ length: 24 }, (_, h) => h);
 
@@ -878,10 +876,9 @@ class CoupleCalendarPanel extends HTMLElement {
         </div>`;
       }).join("");
 
-      const nowPx     = (nowMin / 60) * HOUR_H;
       const hourLines = hours.map(h => `<div class="hour-line" style="top:${h*HOUR_H}px;"></div>`).join("");
       const nowLine   = di === todayIdx
-        ? `<div class="now-line" style="top:${nowPx}px;"><span class="now-time-label">${nowLabel}</span></div>`
+        ? `<div class="now-line" style="top:${(nowMin/60)*HOUR_H}px;"></div>`
         : "";
       const isToday   = di === todayIdx;
       return `<div class="week-day-time-col ${isToday ? "today-col" : ""}" style="height:${24*HOUR_H}px;">${hourLines}${nowLine}${blocks}</div>`;
