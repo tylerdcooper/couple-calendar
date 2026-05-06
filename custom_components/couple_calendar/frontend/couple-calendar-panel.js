@@ -872,16 +872,11 @@ class CoupleCalendarPanel extends HTMLElement {
       return `<div class="week-day-time-col ${isToday ? "today-col" : ""}" style="height:${24*HOUR_H}px;">${hourLines}${nowLine}${blocks}</div>`;
     }).join("");
 
-    const gc     = "grid-template-columns: repeat(7, 1fr)";
-    const gcFull = "grid-template-columns: 56px repeat(7, 1fr)";
+    const gc = "grid-template-columns: repeat(7, 1fr)";
     el.innerHTML = `
       <div class="week-view">
-        <div class="week-day-header" style="${gcFull}">
-          <div></div>${dayHeaders}
-        </div>
-        <div class="week-all-day-row" style="display:grid;${gcFull};">
-          <div></div>${allDayCells}
-        </div>
+        <div class="week-day-header" style="padding-left:56px;">${dayHeaders}</div>
+        <div class="week-all-day-row" style="display:grid;${gc};padding-left:56px;">${allDayCells}</div>
         <div class="week-time-grid">
           <div class="time-gutter" style="min-height:${24*HOUR_H}px;">${timeGutter}</div>
           <div class="week-days-grid" style="${gc}">${timeCols}</div>
