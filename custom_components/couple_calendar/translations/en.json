@@ -3,30 +3,18 @@
     "step": {
       "user": {
         "title": "Set Up Couple Calendar",
-        "description": "Connect your Google Calendars. Make sure the Google Calendar integration is already configured in Home Assistant.",
+        "description": "Select which calendar entities belong to each partner. Colors, theme, and display preferences can be changed any time from the in-app settings drawer.",
         "data": {
           "person_a_name": "Partner 1 Name",
-          "person_a_color": "Partner 1 Color",
           "person_a_calendar": "Partner 1 Calendar",
           "person_b_name": "Partner 2 Name",
-          "person_b_color": "Partner 2 Color",
           "person_b_calendar": "Partner 2 Calendar",
-          "joint_calendar": "Shared / Joint Calendar",
-          "joint_color": "Shared Calendar Color"
-        }
-      },
-      "display": {
-        "title": "Display Preferences",
-        "data": {
-          "first_day_of_week": "First Day of Week",
-          "time_format": "Time Format",
-          "default_view": "Default View",
-          "theme": "Theme"
+          "joint_calendar": "Shared / Joint Calendar (optional)"
         }
       }
     },
     "error": {
-      "no_calendars": "No calendar entities found. Please set up the Google Calendar integration first.",
+      "no_calendars": "No calendar entities found. Please add a Remote Calendar integration first (Settings → Integrations → Remote Calendar).",
       "unknown": "An unexpected error occurred."
     },
     "abort": {
@@ -36,20 +24,13 @@
   "options": {
     "step": {
       "init": {
-        "title": "Couple Calendar Settings",
+        "title": "Couple Calendar — Calendar Sources",
         "data": {
           "person_a_name": "Partner 1 Name",
-          "person_a_color": "Partner 1 Color",
           "person_a_calendar": "Partner 1 Calendar",
           "person_b_name": "Partner 2 Name",
-          "person_b_color": "Partner 2 Color",
           "person_b_calendar": "Partner 2 Calendar",
-          "joint_calendar": "Shared / Joint Calendar",
-          "joint_color": "Shared Calendar Color",
-          "first_day_of_week": "First Day of Week",
-          "time_format": "Time Format",
-          "default_view": "Default View",
-          "theme": "Theme"
+          "joint_calendar": "Shared / Joint Calendar (optional)"
         }
       }
     }
