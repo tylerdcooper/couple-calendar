@@ -519,10 +519,12 @@ class CoupleCalendarPanel extends HTMLElement {
 
   _calendarEntities() {
     const { personA, personB, joint } = this._config;
+    // Handles both legacy string and new array (multiple calendars per person)
+    const toArr = v => !v ? [] : Array.isArray(v) ? v.filter(Boolean) : [v];
     const list = [];
-    if (personA?.calendar) list.push({ entityId: personA.calendar, who: "a" });
-    if (personB?.calendar) list.push({ entityId: personB.calendar, who: "b" });
-    if (joint?.calendar)   list.push({ entityId: joint.calendar,   who: "joint" });
+    for (const id of toArr(personA?.calendar)) list.push({ entityId: id, who: "a" });
+    for (const id of toArr(personB?.calendar)) list.push({ entityId: id, who: "b" });
+    for (const id of toArr(joint?.calendar))   list.push({ entityId: id, who: "joint" });
     return list;
   }
 
