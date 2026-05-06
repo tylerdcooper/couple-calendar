@@ -1,0 +1,13 @@
+{
+  "domain": "couple_calendar",
+  "name": "Couple Calendar",
+  "version": "1.0.0",
+  "documentation": "https://github.com/tylerdcooper/couple-calendar",
+  "issue_tracker": "https://github.com/tylerdcooper/couple-calendar/issues",
+  "codeowners": ["@tylerdcooper"],
+  "requirements": [],
+  "dependencies": [],
+  "after_dependencies": ["google"],
+  "iot_class": "cloud_polling",
+  "config_flow": true
+}

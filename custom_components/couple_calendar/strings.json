@@ -1,0 +1,57 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set Up Couple Calendar",
+        "description": "Connect your Google Calendars. You'll need the Google Calendar integration already set up in Home Assistant.",
+        "data": {
+          "person_a_name": "Partner 1 Name",
+          "person_a_color": "Partner 1 Color",
+          "person_a_calendar": "Partner 1 Calendar",
+          "person_b_name": "Partner 2 Name",
+          "person_b_color": "Partner 2 Color",
+          "person_b_calendar": "Partner 2 Calendar",
+          "joint_calendar": "Shared / Joint Calendar",
+          "joint_color": "Shared Calendar Color"
+        }
+      },
+      "display": {
+        "title": "Display Preferences",
+        "data": {
+          "first_day_of_week": "First Day of Week",
+          "time_format": "Time Format",
+          "default_view": "Default View",
+          "theme": "Theme"
+        }
+      }
+    },
+    "error": {
+      "no_calendars": "No calendar entities found. Please set up the Google Calendar integration first.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "Couple Calendar is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Couple Calendar Settings",
+        "data": {
+          "person_a_name": "Partner 1 Name",
+          "person_a_color": "Partner 1 Color",
+          "person_a_calendar": "Partner 1 Calendar",
+          "person_b_name": "Partner 2 Name",
+          "person_b_color": "Partner 2 Color",
+          "person_b_calendar": "Partner 2 Calendar",
+          "joint_calendar": "Shared / Joint Calendar",
+          "joint_color": "Shared Calendar Color",
+          "first_day_of_week": "First Day of Week",
+          "time_format": "Time Format",
+          "default_view": "Default View",
+          "theme": "Theme"
+        }
+      }
+    }
+  }
+}
