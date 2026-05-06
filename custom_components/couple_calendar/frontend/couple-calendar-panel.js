@@ -197,7 +197,7 @@ function buildStyles(cfg) {
   /* ── Week view ── */
   .week-view { display: flex; flex-direction: column; height: 100%; }
   .week-day-header {
-    display: grid; gap: 2px; flex-shrink: 0;
+    display: flex; flex-shrink: 0;
     background: ${p.surface}; border-bottom: 1px solid ${p.border}; padding: 10px 0 8px;
   }
   .week-day-col-header { text-align: center; cursor: default; }
@@ -209,7 +209,7 @@ function buildStyles(cfg) {
   }
   .week-day-num.today { background: ${p.today}; color: ${p.todayText}; }
   .week-all-day-row {
-    display: grid; gap: 2px; flex-shrink: 0;
+    display: flex; flex-shrink: 0;
     border-bottom: 1px solid ${p.border}; padding: 4px 0;
     background: ${p.surfaceAlt};
   }
@@ -872,11 +872,18 @@ class CoupleCalendarPanel extends HTMLElement {
       return `<div class="week-day-time-col ${isToday ? "today-col" : ""}" style="height:${24*HOUR_H}px;">${hourLines}${nowLine}${blocks}</div>`;
     }).join("");
 
-    const gc = "grid-template-columns: repeat(7, 1fr)";
+    const gc      = "grid-template-columns: repeat(7, 1fr)";
+    const innerGC = `display:grid;${gc};gap:2px;flex:1;`;
     el.innerHTML = `
       <div class="week-view">
-        <div class="week-day-header" style="padding-left:56px;">${dayHeaders}</div>
-        <div class="week-all-day-row" style="display:grid;${gc};padding-left:56px;">${allDayCells}</div>
+        <div class="week-day-header">
+          <div style="width:56px;flex-shrink:0;"></div>
+          <div style="${innerGC}">${dayHeaders}</div>
+        </div>
+        <div class="week-all-day-row">
+          <div style="width:56px;flex-shrink:0;"></div>
+          <div style="${innerGC}">${allDayCells}</div>
+        </div>
         <div class="week-time-grid">
           <div class="time-gutter" style="min-height:${24*HOUR_H}px;">${timeGutter}</div>
           <div class="week-days-grid" style="${gc}">${timeCols}</div>
