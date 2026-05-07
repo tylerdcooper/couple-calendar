@@ -578,6 +578,14 @@ class CoupleCalendarPanel extends HTMLElement {
     const { start, end } = this._fetchRange();
     const entities = this._calendarEntities();
 
+    // Force HA to re-poll Google Calendar before we read, giving near-instant updates
+    const uniqueIds = [...new Set(entities.map(e => e.entityId).filter(Boolean))];
+    if (uniqueIds.length) {
+      try {
+        await this._hass.callService("homeassistant", "update_entity", { entity_id: uniqueIds });
+      } catch (_) { /* non-fatal — fall through to fetch cached data */ }
+    }
+
     try {
       const all = [];
       for (const { entityId, who } of entities) {
@@ -658,7 +666,9 @@ class CoupleCalendarPanel extends HTMLElement {
       if (!s) return false;
       const ds = startOfDay(day);
       const de = addDays(ds, 1);
-      return s < de && (e || s) >= ds;
+      // Use strict > so all-day event exclusive end dates (e.g. end=Friday
+      // for a Thursday event) don't bleed onto the following day.
+      return s < de && (e || s) > ds;
     });
   }
 
