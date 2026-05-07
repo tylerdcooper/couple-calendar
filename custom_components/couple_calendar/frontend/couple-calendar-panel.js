@@ -498,7 +498,7 @@ class CoupleCalendarPanel extends HTMLElement {
       personA: pc.personA || { name: "Partner 1", color: "#818CF8", calendar: "" },
       personB: pc.personB || { name: "Partner 2", color: "#F472B6", calendar: "" },
       joint:   pc.joint   || { color: "#34D399",  calendar: "" },
-      firstDayOfWeek: parseInt(pc.firstDayOfWeek ?? 0),
+      firstDayOfWeek: pc.firstDayOfWeek ?? 0,
       timeFormat:     pc.timeFormat  || "12h",
       defaultView:    pc.defaultView || "month",
       theme:          pc.theme       || "dark",
@@ -562,7 +562,7 @@ class CoupleCalendarPanel extends HTMLElement {
 
   _fetchRange() {
     if (this._view === "week") {
-      const ws = startOfWeek(this._cursor, this._config.firstDayOfWeek);
+      const ws = this._weekStart();
       return { start: ws, end: addDays(ws, 7) };
     }
     if (this._view === "agenda") {
@@ -612,6 +612,22 @@ class CoupleCalendarPanel extends HTMLElement {
       const de = addDays(ds, 1);
       return s < de && (e || s) >= ds;
     });
+  }
+
+  // ── Week start helper ──────────────────────────────────────────────────
+
+  _weekStart(cursor) {
+    const d    = cursor || this._cursor;
+    const fdow = this._config?.firstDayOfWeek;
+    if (fdow === "today") {
+      // Anchor to today; each nav step is a 7-day window from today
+      const todayMs  = startOfDay(new Date()).getTime();
+      const cursorMs = startOfDay(d).getTime();
+      const diffDays = Math.round((cursorMs - todayMs) / 86400000);
+      const window   = Math.floor(diffDays / 7);
+      return addDays(startOfDay(new Date()), window * 7);
+    }
+    return startOfWeek(d, parseInt(fdow ?? 0));
   }
 
   // ── Navigation ─────────────────────────────────────────────────────────
@@ -691,7 +707,7 @@ class CoupleCalendarPanel extends HTMLElement {
     let titleMain = "", titleSub = "";
 
     if (this._view === "week") {
-      const ws = startOfWeek(this._cursor, fdow);
+      const ws = this._weekStart();
       const we = addDays(ws, 6);
       if (ws.getMonth() === we.getMonth()) {
         titleMain = MONTH_NAMES[ws.getMonth()]; titleSub = ws.getFullYear();
@@ -800,7 +816,8 @@ class CoupleCalendarPanel extends HTMLElement {
 
   _renderMonthView(el) {
     const cfg   = this._config || {};
-    const fdow  = cfg.firstDayOfWeek ?? 0;
+    // "today" mode only applies to week view; month view falls back to Sunday
+    const fdow  = cfg.firstDayOfWeek === "today" ? 0 : parseInt(cfg.firstDayOfWeek ?? 0);
     const year  = this._cursor.getFullYear();
     const month = this._cursor.getMonth();
     const firstDay  = new Date(year, month, 1);
@@ -887,9 +904,8 @@ class CoupleCalendarPanel extends HTMLElement {
     const prevScroll = el.querySelector(".week-time-grid")?.scrollTop ?? null;
 
     const cfg    = this._config || {};
-    const fdow   = cfg.firstDayOfWeek ?? 0;
     const use24  = cfg.timeFormat === "24h";
-    const ws     = startOfWeek(this._cursor, fdow);
+    const ws     = this._weekStart();
     const days   = Array.from({ length: 7 }, (_, i) => addDays(ws, i));
     const HOUR_H = 60;
 
@@ -927,7 +943,7 @@ class CoupleCalendarPanel extends HTMLElement {
         const s        = new Date(ev.start.dateTime);
         const e        = ev.end?.dateTime ? new Date(ev.end.dateTime) : addDays(s, 1/24);
         const top      = ((s.getHours() * 60 + s.getMinutes()) / 60) * HOUR_H;
-        const h        = Math.max(28, ((e - s) / 3600000) * HOUR_H);
+        const h        = Math.max(28, ((e - s) / 3600000) * HOUR_H) - 1; // -1px gap between back-to-back events
         const tc       = textOnBg(ev._color);
         const numCols  = ev._numCols || 1;
         const col      = ev._col || 0;
@@ -1105,8 +1121,9 @@ class CoupleCalendarPanel extends HTMLElement {
           <div class="settings-row">
             <label>Week starts</label>
             <select id="s-fdow">
-              <option value="0" ${cfg.firstDayOfWeek===0?"selected":""}>Sunday</option>
-              <option value="1" ${cfg.firstDayOfWeek===1?"selected":""}>Monday</option>
+              <option value="0"     ${(cfg.firstDayOfWeek==0||cfg.firstDayOfWeek=="0")     ?"selected":""}>Sunday</option>
+              <option value="1"     ${(cfg.firstDayOfWeek==1||cfg.firstDayOfWeek=="1")     ?"selected":""}>Monday</option>
+              <option value="today" ${cfg.firstDayOfWeek==="today"?"selected":""}>Today (rolling 7 days)</option>
             </select>
           </div>
           <div class="settings-row">
@@ -1154,7 +1171,7 @@ class CoupleCalendarPanel extends HTMLElement {
       jointColor:   dr.querySelector("#s-j-colors .selected")?.dataset.color || undefined,
       theme:        dr.querySelector("#s-theme")?.value || undefined,
       timeFormat:   dr.querySelector("#s-time")?.value  || undefined,
-      firstDayOfWeek: parseInt(dr.querySelector("#s-fdow")?.value ?? this._config?.firstDayOfWeek ?? 0),
+      firstDayOfWeek: dr.querySelector("#s-fdow")?.value ?? this._config?.firstDayOfWeek ?? 0,
       defaultView:  dr.querySelector("#s-default-view")?.value || undefined,
     };
     this._saveLocalSettings(patch);
