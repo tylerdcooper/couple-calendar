@@ -163,7 +163,9 @@ function buildStyles(cfg) {
   }
 
   /* ── Main ── */
-  .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+  /* overflow:clip clips visually like hidden but does NOT become a sticky
+     containing block, so position:sticky inside .month-scroll works correctly */
+  .main { flex: 1; overflow: clip; display: flex; flex-direction: column; position: relative; }
 
   /* ── Month grid ── */
   .month-view { display: flex; flex-direction: column; height: 100%; }
@@ -772,10 +774,12 @@ class CoupleCalendarPanel extends HTMLElement {
   }
 
   _goToday() {
-    this._cursor = new Date();
-    this._today  = startOfDay(new Date());
+    this._cursor       = new Date();
+    this._today        = startOfDay(new Date());
+    this._scrollToCursor = true; // tell _renderMonthView to jump to cursor, not restore scroll
     this._renderHeader();
     this._renderMainContent();
+    this._scrollToCursor = false;
     this._fetchEvents(false);
   }
 
@@ -961,13 +965,13 @@ class CoupleCalendarPanel extends HTMLElement {
 
     const scrollEl = el.querySelector("#cc-month-scroll");
     if (scrollEl) {
-      if (prevScroll !== null) {
+      if (prevScroll !== null && !this._scrollToCursor) {
         // Restore position after event-fetch re-render
         scrollEl.scrollTop = prevScroll;
       } else {
-        // Fresh render — scroll to the cursor month
+        // Fresh render or Today button — scroll to the cursor month
         const target = scrollEl.querySelector(`[data-month-key="${this._cursor.getFullYear()}-${this._cursor.getMonth()}"]`);
-        if (target) scrollEl.scrollTop = target.offsetTop - 2;
+        if (target) scrollEl.scrollTop = target.offsetTop;
       }
       scrollEl.addEventListener("scroll", () => this._onMonthScroll(scrollEl), { passive: true });
     }
