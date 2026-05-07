@@ -522,10 +522,6 @@ class CoupleCalendarPanel extends HTMLElement {
     this._activeFilter = "all";
     this._drawerOpen   = false;
     this._lastFetched  = null;
-    // Range cache — skip API calls when data is still fresh
-    this._loadedStart  = null; // earliest date in _events
-    this._loadedEnd    = null; // latest date in _events
-    this._loadedAt     = null; // timestamp of last successful fetch
 
     this._touchStartX  = 0;
     this._touchStartY  = 0;
@@ -589,49 +585,26 @@ class CoupleCalendarPanel extends HTMLElement {
 
     this._view = this._config.defaultView;
     this._render();
-    this._fetchEvents().then(() => {
-      if (this._view === "month") this._prefetchMonthRange();
-    });
+    this._fetchEvents();
   }
 
   // ── Data ───────────────────────────────────────────────────────────────
 
-  // Data is considered fresh for 2 minutes after a successful fetch
-  static get STALE_MS() { return 2 * 60 * 1000; }
+  // Skip re-polling Google if data was fetched within this window
+  static get STALE_MS() { return 2 * 60 * 1000; } // 2 minutes
 
-  // True if [start, end) is fully covered by a recent fetch
-  _isCovered(start, end) {
-    if (!this._loadedStart || !this._loadedEnd || !this._loadedAt) return false;
-    return (Date.now() - this._loadedAt) < CoupleCalendarPanel.STALE_MS &&
-           this._loadedStart.getTime() <= start.getTime() &&
-           this._loadedEnd.getTime()   >= end.getTime();
-  }
-
-  async _fetchEvents(showSpinner = true, { forceUpdate = null, range = null, inPlace = false } = {}) {
+  async _fetchEvents(showSpinner = true) {
     if (!this._hass || !this._config) return;
-
-    const { start, end } = range || this._fetchRange();
-
-    // If range is already loaded and data is fresh, just re-render — no API call
-    if (!forceUpdate && this._isCovered(start, end)) {
-      this._loading = false;
-      if (inPlace) this._updateMonthEventsInPlace();
-      else         this._renderMainContent();
-      this._tickUpdated();
-      return;
-    }
-
     if (showSpinner) { this._loading = true; this._renderMainContent(); }
 
+    const { start, end } = this._fetchRange();
     const entities  = this._calendarEntities();
     const uniqueIds = [...new Set(entities.map(e => e.entityId).filter(Boolean))];
 
-    // Only re-poll Google when data is stale or explicitly forced
+    // Only re-poll Google when data is stale — skips the wait on quick view switches
     const dataIsStale = !this._lastFetched ||
       (Date.now() - this._lastFetched.getTime()) > CoupleCalendarPanel.STALE_MS;
-    const shouldUpdate = forceUpdate !== null ? forceUpdate : dataIsStale;
-
-    if (shouldUpdate && uniqueIds.length) {
+    if (dataIsStale && uniqueIds.length) {
       try {
         await this._hass.callService("homeassistant", "update_entity", { entity_id: uniqueIds });
       } catch (_) { /* non-fatal */ }
@@ -641,7 +614,7 @@ class CoupleCalendarPanel extends HTMLElement {
       const sStr = start.toISOString().replace(".000Z","Z");
       const eStr = end.toISOString().replace(".000Z","Z");
 
-      // All calendar entities fetched in parallel
+      // Fetch all calendar entities in parallel
       const results = await Promise.all(
         entities
           .filter(({ entityId }) => !!entityId)
@@ -655,39 +628,22 @@ class CoupleCalendarPanel extends HTMLElement {
           )
       );
 
-      // Merge: keep events outside this window, replace events inside it
-      const startMs = start.getTime(), endMs = end.getTime();
-      const outside = (this._events || []).filter(ev => {
-        const s = parseEventDT(ev.start);
-        if (!s) return true;
-        const t = s.getTime();
-        return t < startMs || t >= endMs;
-      });
-      this._events = [...outside, ...results.flat()];
-
-      // Expand the known loaded range
-      this._loadedStart = this._loadedStart
-        ? new Date(Math.min(this._loadedStart.getTime(), start.getTime())) : start;
-      this._loadedEnd   = this._loadedEnd
-        ? new Date(Math.max(this._loadedEnd.getTime(), end.getTime()))     : end;
-      this._loadedAt    = Date.now();
+      this._events = results.flat();
       this._lastFetched = new Date();
     } catch (e) {
       console.error("[FamilyCalendar] fetch error:", e);
     }
 
     this._loading = false;
-    if (inPlace) this._updateMonthEventsInPlace();
-    else         this._renderMainContent();
+    this._renderMainContent();
     this._tickUpdated();
   }
 
   async _manualRefresh() {
     const btn = this.shadowRoot.getElementById("cc-refresh-btn");
     if (btn) btn.classList.add("spinning");
-    // Force re-poll and clear range cache so everything refreshes
-    this._loadedStart = null; this._loadedEnd = null; this._loadedAt = null;
-    await this._fetchEvents(false, { forceUpdate: true });
+    this._lastFetched = null; // force re-poll on manual refresh
+    await this._fetchEvents(false);
     if (btn) btn.classList.remove("spinning");
   }
 
@@ -699,79 +655,11 @@ class CoupleCalendarPanel extends HTMLElement {
     if (this._view === "agenda") {
       return { start: startOfDay(new Date()), end: addDays(new Date(), 90) };
     }
-    // Month: ± 2 months for initial fast load; prefetch extends to ± 9
+    // Month view: current month ± 2 months (5 months total)
     return {
       start: addMonths(startOfMonth(this._cursor), -2),
       end:   addMonths(endOfMonth(this._cursor),    2),
     };
-  }
-
-  // Background prefetch for the full month scroll range.
-  // Uses inPlace=true so event chips update without touching the scroll container.
-  _prefetchMonthRange() {
-    this._fetchEvents(false, {
-      forceUpdate: false,
-      inPlace: true,
-      range: {
-        start: addMonths(startOfMonth(this._cursor), -3),
-        end:   addMonths(endOfMonth(this._cursor),    9),
-      },
-    });
-  }
-
-  // Surgically update only event chip HTML in existing day cells.
-  // No DOM restructuring = no scroll position change.
-  _updateMonthEventsInPlace() {
-    const scrollEl = this.shadowRoot.querySelector("#cc-month-scroll");
-    if (!scrollEl) { this._renderMainContent(); return; }
-
-    const use24     = this._config?.timeFormat === "24h";
-    const allEvents = this._filteredEvents();
-
-    scrollEl.querySelectorAll(".day-cell[data-date]").forEach(cell => {
-      const day    = new Date(cell.dataset.date + "T12:00:00");
-      const events = this._eventsOnDay(day);
-      const MAX    = 3;
-
-      const chips = events.slice(0, MAX).map(ev => {
-        const idx = allEvents.indexOf(ev);
-        if (!ev.start?.dateTime) {
-          const tc = textOnBg(ev._color);
-          return `<div class="event-chip" data-idx="${idx}"
-            style="background:${ev._color};color:${tc};border-left:none;font-weight:600;"
-            title="${ev.summary||"Event"}">${ev.summary||"Event"}</div>`;
-        }
-        const t = formatTime(new Date(ev.start.dateTime), use24);
-        return `<div class="event-chip" data-idx="${idx}"
-          style="background:${ev._color}22;color:${ev._color};border-left:3px solid ${ev._color};"
-          title="${ev.summary||"Event"}">
-          <span style="opacity:0.7;font-size:10px;">${t} </span>${ev.summary||"Event"}
-        </div>`;
-      }).join("");
-
-      const overflow = events.length > MAX
-        ? `<div class="more-events">+${events.length - MAX} more</div>` : "";
-
-      const chipsEl = cell.querySelector(".event-chips");
-      if (!chipsEl) return;
-      chipsEl.innerHTML = chips + overflow;
-
-      // Re-attach click handlers on the new chips
-      chipsEl.querySelectorAll(".event-chip").forEach(chip =>
-        chip.addEventListener("click", e => {
-          e.stopPropagation();
-          this._openDetailModal(allEvents[parseInt(chip.dataset.idx)]);
-        })
-      );
-      chipsEl.querySelectorAll(".more-events").forEach(more =>
-        more.addEventListener("click", e => {
-          e.stopPropagation();
-          const iso = cell.dataset.date;
-          if (iso) { this._cursor = new Date(iso + "T12:00:00"); this._switchView("week"); }
-        })
-      );
-    });
-    this._tickUpdated();
   }
 
   _calendarEntities() {
@@ -893,11 +781,8 @@ class CoupleCalendarPanel extends HTMLElement {
 
   _switchView(view) {
     this._view = view;
-    this._render(); // render immediately with existing _events (no flicker)
-    this._fetchEvents().then(() => {
-      // After fast initial load, silently extend the range in the background
-      if (this._view === "month") this._prefetchMonthRange();
-    });
+    this._render();
+    this._fetchEvents();
   }
 
   // ── Rendering ──────────────────────────────────────────────────────────
