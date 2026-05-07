@@ -175,18 +175,26 @@ function buildStyles(cfg) {
     padding: 10px 4px; text-align: center; font-size: 12px; font-weight: 700;
     color: ${p.textSub}; letter-spacing: 0.5px; text-transform: uppercase;
   }
-  .month-grid {
-    flex: 1; display: grid; grid-template-rows: repeat(6, 1fr);
-    padding: 4px; gap: 4px; overflow: hidden;
+  /* Scrollable month view */
+  .month-scroll {
+    flex: 1; overflow-y: auto; padding: 4px 4px 0;
+    scrollbar-width: none;
   }
-  .month-grid.five-rows { grid-template-rows: repeat(5, 1fr); }
-  .week-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .month-scroll::-webkit-scrollbar { display: none; }
+  .month-section { margin-bottom: 4px; }
+  .month-section-label {
+    padding: 10px 8px 6px; font-size: 13px; font-weight: 800;
+    color: ${p.textSub}; text-transform: uppercase; letter-spacing: 0.8px;
+    position: sticky; top: 0; background: ${p.bg}; z-index: 2;
+  }
+  .week-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
   .day-cell {
     background: ${p.surface}; border: 1px solid ${p.border}; border-radius: 12px;
     padding: 8px; display: flex; flex-direction: column;
-    overflow: hidden; transition: background 0.12s; position: relative; min-height: 0;
+    overflow: hidden; transition: background 0.12s; position: relative;
+    min-height: 110px;
   }
-  .day-cell.other-month { opacity: 0.32; }
+  .day-cell.other-month { opacity: 0.28; }
   .day-cell.today { border-color: ${p.today}66; }
   .day-number {
     font-size: 17px; font-weight: 600; line-height: 1;
@@ -636,9 +644,11 @@ class CoupleCalendarPanel extends HTMLElement {
     if (this._view === "agenda") {
       return { start: startOfDay(new Date()), end: addDays(new Date(), 90) };
     }
-    const s = startOfMonth(this._cursor);
-    const e = endOfMonth(this._cursor);
-    return { start: addDays(s, -7), end: addDays(e, 7) };
+    // Fetch the full scrollable range: 3 months before + 9 months after cursor
+    return {
+      start: addMonths(startOfMonth(this._cursor), -3),
+      end:   addMonths(endOfMonth(this._cursor),    9),
+    };
   }
 
   _calendarEntities() {
@@ -701,13 +711,29 @@ class CoupleCalendarPanel extends HTMLElement {
   // ── Navigation ─────────────────────────────────────────────────────────
 
   _navigate(dir) {
+    // Month view: smooth-scroll to the target month section instead of re-rendering
+    if (this._view === "month") {
+      this._shiftCursor(dir);
+      const scrollEl = this.shadowRoot.querySelector("#cc-month-scroll");
+      const target   = scrollEl?.querySelector(`[data-month-key="${this._cursor.getFullYear()}-${this._cursor.getMonth()}"]`);
+      if (target && scrollEl) {
+        scrollEl.scrollTo({ top: target.offsetTop - 2, behavior: "smooth" });
+      } else {
+        // Month not rendered yet — re-render the scroll view
+        this._renderMainContent();
+      }
+      this._renderHeader();
+      this._fetchEvents(false);
+      return;
+    }
+
     const main = this.shadowRoot.querySelector(".main");
     if (main) {
       main.classList.add(dir > 0 ? "anim-slide-left" : "anim-slide-right");
       setTimeout(() => {
         main.classList.remove("anim-slide-left","anim-slide-right");
         this._shiftCursor(dir);
-        this._renderHeader();        // update title immediately on navigate
+        this._renderHeader();
         this._renderMainContent();
         main.classList.add(dir > 0 ? "anim-enter-right" : "anim-enter-left");
         setTimeout(() => main.classList.remove("anim-enter-right","anim-enter-left"), 220);
@@ -889,47 +915,97 @@ class CoupleCalendarPanel extends HTMLElement {
     this._bindSwipe(el);
   }
 
-  // ── Month view ────────────────────────────────────────────────────────
+  // ── Month view (continuous scrollable) ───────────────────────────────
 
   _renderMonthView(el) {
-    const cfg   = this._config || {};
-    // "today" mode only applies to week view; month view falls back to Sunday
-    const fdow  = cfg.firstDayOfWeek === "today" ? 0 : parseInt(cfg.firstDayOfWeek ?? 0);
-    const year  = this._cursor.getFullYear();
-    const month = this._cursor.getMonth();
-    const firstDay  = new Date(year, month, 1);
-    const lastDay   = new Date(year, month + 1, 0);
-    const startPad  = (firstDay.getDay() - fdow + 7) % 7;
-    const totalCells = startPad + lastDay.getDate();
-    const numRows   = Math.ceil(totalCells / 7);
+    const cfg  = this._config || {};
+    const fdow = cfg.firstDayOfWeek === "today" ? 0 : parseInt(cfg.firstDayOfWeek ?? 0);
 
     const dayLabels = Array.from({ length: 7 }, (_, i) => DAY_NAMES_SHORT[(fdow + i) % 7]);
-    const cells = Array.from({ length: numRows * 7 }, (_, i) => new Date(year, month, 1 + (i - startPad)));
+
+    // Render 3 months before cursor through 9 months after = 13 months total
+    const BEFORE = 3, AFTER = 9;
+    const sections = Array.from({ length: BEFORE + AFTER + 1 }, (_, i) =>
+      this._renderMonthSection(addMonths(this._cursor, i - BEFORE), fdow)
+    ).join("");
 
     el.innerHTML = `
       <div class="month-view">
         <div class="weekday-header">
           ${dayLabels.map(n => `<div class="weekday-label">${n}</div>`).join("")}
         </div>
-        <div class="month-grid ${numRows===5?"five-rows":""}">
-          ${this._chunkArray(cells, 7).map(week => `
-            <div class="week-row">
-              ${week.map(day => this._renderDayCell(day, month)).join("")}
-            </div>
-          `).join("")}
-        </div>
+        <div class="month-scroll" id="cc-month-scroll">${sections}</div>
       </div>
     `;
 
-    // Tap event chip → show detail
+    // Scroll to the cursor month (no animation — instant positioning)
+    const scrollEl = el.querySelector("#cc-month-scroll");
+    const target   = scrollEl?.querySelector(`[data-month-key="${this._cursor.getFullYear()}-${this._cursor.getMonth()}"]`);
+    if (target && scrollEl) scrollEl.scrollTop = target.offsetTop - 2;
+
+    // Update header title as user scrolls
+    scrollEl?.addEventListener("scroll", () => this._onMonthScroll(scrollEl), { passive: true });
+
+    this._bindMonthEvents(el);
+  }
+
+  _renderMonthSection(monthDate, fdow) {
+    const year     = monthDate.getFullYear();
+    const month    = monthDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay  = new Date(year, month + 1, 0);
+    const startPad = (firstDay.getDay() - fdow + 7) % 7;
+    const numRows  = Math.ceil((startPad + lastDay.getDate()) / 7);
+    const cells    = Array.from({ length: numRows * 7 }, (_, i) => new Date(year, month, 1 + (i - startPad)));
+
+    const weekRowsHtml = this._chunkArray(cells, 7).map(week => `
+      <div class="week-row">
+        ${week.map(day => this._renderDayCell(day, month)).join("")}
+      </div>
+    `).join("");
+
+    const isCurrentYear = year === new Date().getFullYear();
+    const label = isCurrentYear ? MONTH_NAMES[month] : `${MONTH_NAMES[month]} ${year}`;
+
+    return `
+      <div class="month-section"
+           data-month-key="${year}-${month}"
+           data-year="${year}" data-month="${month}">
+        <div class="month-section-label">${label}</div>
+        ${weekRowsHtml}
+      </div>
+    `;
+  }
+
+  _onMonthScroll(scrollEl) {
+    // Find the month section whose label is at or just above the top third of the viewport
+    const threshold = scrollEl.scrollTop + scrollEl.clientHeight * 0.25;
+    const sections  = Array.from(scrollEl.querySelectorAll(".month-section"));
+    let active = sections[0];
+    for (const s of sections) {
+      if (s.offsetTop <= threshold) active = s; else break;
+    }
+    if (!active) return;
+    const y = parseInt(active.dataset.year);
+    const m = parseInt(active.dataset.month);
+    if (y !== this._cursor.getFullYear() || m !== this._cursor.getMonth()) {
+      this._cursor = new Date(y, m, 1);
+      // Update just the title text nodes — no full header re-render (avoids scroll jump)
+      const t = this._headerTitle();
+      const monthEl = this.shadowRoot.querySelector(".header-month");
+      const subEl   = this.shadowRoot.querySelector(".header-sub");
+      if (monthEl) monthEl.textContent = t.main;
+      if (subEl)   subEl.textContent   = t.sub ?? "";
+    }
+  }
+
+  _bindMonthEvents(el) {
     el.querySelectorAll(".event-chip").forEach(chip =>
       chip.addEventListener("click", e => {
         e.stopPropagation();
-        const idx = parseInt(chip.dataset.idx);
-        this._openDetailModal(this._filteredEvents()[idx]);
+        this._openDetailModal(this._filteredEvents()[parseInt(chip.dataset.idx)]);
       })
     );
-    // Tap "more" → switch to week view on that date
     el.querySelectorAll(".more-events").forEach(more =>
       more.addEventListener("click", e => {
         e.stopPropagation();
