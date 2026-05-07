@@ -163,32 +163,35 @@ function buildStyles(cfg) {
   }
 
   /* ── Main ── */
-  /* overflow:clip clips visually like hidden but does NOT become a sticky
-     containing block, so position:sticky inside .month-scroll works correctly */
-  .main { flex: 1; overflow: clip; display: flex; flex-direction: column; position: relative; }
+  .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; position: relative; }
 
   /* ── Month grid ── */
   .month-view { display: flex; flex-direction: column; height: 100%; }
+  /* Scrollable month view — weekday header lives INSIDE .month-scroll so
+     all sticky elements share the same scroll container and top:0 is consistent */
+  .month-view { display: flex; flex-direction: column; height: 100%; }
+  .month-scroll {
+    flex: 1; overflow-y: auto; padding: 0 4px 4px;
+    scrollbar-width: none;
+  }
+  .month-scroll::-webkit-scrollbar { display: none; }
+  /* Weekday name row — sticky at the very top of the scroll container */
   .weekday-header {
     display: grid; grid-template-columns: repeat(7, 1fr);
-    padding: 0 4px; border-bottom: 1px solid ${p.border};
-    background: ${p.surface}; flex-shrink: 0;
+    padding: 0; border-bottom: 1px solid ${p.border};
+    background: ${p.surface};
+    position: sticky; top: 0; z-index: 3;
   }
   .weekday-label {
     padding: 10px 4px; text-align: center; font-size: 12px; font-weight: 700;
     color: ${p.textSub}; letter-spacing: 0.5px; text-transform: uppercase;
   }
-  /* Scrollable month view */
-  .month-scroll {
-    flex: 1; overflow-y: auto; padding: 0 4px 0;
-    scrollbar-width: none;
-  }
-  .month-scroll::-webkit-scrollbar { display: none; }
   .month-section { margin-bottom: 4px; }
+  /* Month name label — sticky just below the weekday header (~37px) */
   .month-section-label {
-    padding: 10px 8px 6px; font-size: 13px; font-weight: 800;
+    padding: 8px 8px 5px; font-size: 13px; font-weight: 800;
     color: ${p.textSub}; text-transform: uppercase; letter-spacing: 0.8px;
-    position: sticky; top: 0; background: ${p.bg}; z-index: 2;
+    position: sticky; top: 37px; background: ${p.bg}; z-index: 2;
   }
   .week-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
   .day-cell {
@@ -737,7 +740,8 @@ class CoupleCalendarPanel extends HTMLElement {
       const key        = `${targetDate.getFullYear()}-${targetDate.getMonth()}`;
       const target     = scrollEl?.querySelector(`[data-month-key="${key}"]`);
       if (target && scrollEl) {
-        scrollEl.scrollTo({ top: target.offsetTop - 2, behavior: "smooth" });
+        const hdrH = scrollEl.querySelector(".weekday-header")?.offsetHeight ?? 37;
+        scrollEl.scrollTo({ top: target.offsetTop - hdrH, behavior: "smooth" });
       } else {
         // Target month not rendered — shift cursor and re-render
         this._shiftCursor(dir);
@@ -954,12 +958,16 @@ class CoupleCalendarPanel extends HTMLElement {
       this._renderMonthSection(addMonths(this._cursor, i - BEFORE), fdow)
     ).join("");
 
+    // Weekday header lives INSIDE the scroll container so all sticky
+    // elements share the same ancestor and top:0 / top:37px are consistent.
     el.innerHTML = `
       <div class="month-view">
-        <div class="weekday-header">
-          ${dayLabels.map(n => `<div class="weekday-label">${n}</div>`).join("")}
+        <div class="month-scroll" id="cc-month-scroll">
+          <div class="weekday-header">
+            ${dayLabels.map(n => `<div class="weekday-label">${n}</div>`).join("")}
+          </div>
+          ${sections}
         </div>
-        <div class="month-scroll" id="cc-month-scroll">${sections}</div>
       </div>
     `;
 
@@ -969,9 +977,11 @@ class CoupleCalendarPanel extends HTMLElement {
         // Restore position after event-fetch re-render
         scrollEl.scrollTop = prevScroll;
       } else {
-        // Fresh render or Today button — scroll to the cursor month
+        // Fresh render or Today button — scroll to the cursor month.
+        // Offset by the weekday-header height so it isn't hidden under the sticky row.
         const target = scrollEl.querySelector(`[data-month-key="${this._cursor.getFullYear()}-${this._cursor.getMonth()}"]`);
-        if (target) scrollEl.scrollTop = target.offsetTop;
+        const hdrH   = scrollEl.querySelector(".weekday-header")?.offsetHeight ?? 37;
+        if (target) scrollEl.scrollTop = target.offsetTop - hdrH;
       }
       scrollEl.addEventListener("scroll", () => this._onMonthScroll(scrollEl), { passive: true });
     }
