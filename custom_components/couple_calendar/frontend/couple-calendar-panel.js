@@ -522,6 +522,10 @@ class CoupleCalendarPanel extends HTMLElement {
     this._activeFilter = "all";
     this._drawerOpen   = false;
     this._lastFetched  = null;
+    // Range cache — skip API calls when data is still fresh
+    this._loadedStart  = null; // earliest date in _events
+    this._loadedEnd    = null; // latest date in _events
+    this._loadedAt     = null; // timestamp of last successful fetch
 
     this._touchStartX  = 0;
     this._touchStartY  = 0;
@@ -592,19 +596,37 @@ class CoupleCalendarPanel extends HTMLElement {
 
   // ── Data ───────────────────────────────────────────────────────────────
 
-  // How stale data can be before we force-poll Google again
-  static get STALE_MS() { return 2 * 60 * 1000; } // 2 minutes
+  // Data is considered fresh for 2 minutes after a successful fetch
+  static get STALE_MS() { return 2 * 60 * 1000; }
 
-  async _fetchEvents(showSpinner = true, { forceUpdate = null, range = null } = {}) {
+  // True if [start, end) is fully covered by a recent fetch
+  _isCovered(start, end) {
+    if (!this._loadedStart || !this._loadedEnd || !this._loadedAt) return false;
+    return (Date.now() - this._loadedAt) < CoupleCalendarPanel.STALE_MS &&
+           this._loadedStart.getTime() <= start.getTime() &&
+           this._loadedEnd.getTime()   >= end.getTime();
+  }
+
+  async _fetchEvents(showSpinner = true, { forceUpdate = null, range = null, inPlace = false } = {}) {
     if (!this._hass || !this._config) return;
-    if (showSpinner) { this._loading = true; this._renderMainContent(); }
 
     const { start, end } = range || this._fetchRange();
-    const entities       = this._calendarEntities();
-    const uniqueIds      = [...new Set(entities.map(e => e.entityId).filter(Boolean))];
 
-    // Only call update_entity when data is stale or explicitly requested.
-    // Skipping it on quick view-switches makes them feel instant.
+    // If range is already loaded and data is fresh, just re-render — no API call
+    if (!forceUpdate && this._isCovered(start, end)) {
+      this._loading = false;
+      if (inPlace) this._updateMonthEventsInPlace();
+      else         this._renderMainContent();
+      this._tickUpdated();
+      return;
+    }
+
+    if (showSpinner) { this._loading = true; this._renderMainContent(); }
+
+    const entities  = this._calendarEntities();
+    const uniqueIds = [...new Set(entities.map(e => e.entityId).filter(Boolean))];
+
+    // Only re-poll Google when data is stale or explicitly forced
     const dataIsStale = !this._lastFetched ||
       (Date.now() - this._lastFetched.getTime()) > CoupleCalendarPanel.STALE_MS;
     const shouldUpdate = forceUpdate !== null ? forceUpdate : dataIsStale;
@@ -619,7 +641,7 @@ class CoupleCalendarPanel extends HTMLElement {
       const sStr = start.toISOString().replace(".000Z","Z");
       const eStr = end.toISOString().replace(".000Z","Z");
 
-      // Fetch all calendar entities IN PARALLEL instead of sequentially
+      // All calendar entities fetched in parallel
       const results = await Promise.all(
         entities
           .filter(({ entityId }) => !!entityId)
@@ -633,7 +655,7 @@ class CoupleCalendarPanel extends HTMLElement {
           )
       );
 
-      // Merge into _events: replace events inside the fetched window, keep others
+      // Merge: keep events outside this window, replace events inside it
       const startMs = start.getTime(), endMs = end.getTime();
       const outside = (this._events || []).filter(ev => {
         const s = parseEventDT(ev.start);
@@ -642,20 +664,29 @@ class CoupleCalendarPanel extends HTMLElement {
         return t < startMs || t >= endMs;
       });
       this._events = [...outside, ...results.flat()];
+
+      // Expand the known loaded range
+      this._loadedStart = this._loadedStart
+        ? new Date(Math.min(this._loadedStart.getTime(), start.getTime())) : start;
+      this._loadedEnd   = this._loadedEnd
+        ? new Date(Math.max(this._loadedEnd.getTime(), end.getTime()))     : end;
+      this._loadedAt    = Date.now();
       this._lastFetched = new Date();
     } catch (e) {
       console.error("[FamilyCalendar] fetch error:", e);
     }
 
     this._loading = false;
-    this._renderMainContent();
+    if (inPlace) this._updateMonthEventsInPlace();
+    else         this._renderMainContent();
     this._tickUpdated();
   }
 
   async _manualRefresh() {
     const btn = this.shadowRoot.getElementById("cc-refresh-btn");
     if (btn) btn.classList.add("spinning");
-    // Manual refresh always force-updates Google, covers full visible range
+    // Force re-poll and clear range cache so everything refreshes
+    this._loadedStart = null; this._loadedEnd = null; this._loadedAt = null;
     await this._fetchEvents(false, { forceUpdate: true });
     if (btn) btn.classList.remove("spinning");
   }
@@ -668,22 +699,79 @@ class CoupleCalendarPanel extends HTMLElement {
     if (this._view === "agenda") {
       return { start: startOfDay(new Date()), end: addDays(new Date(), 90) };
     }
-    // Month view: load only ± 2 months initially (fast).
-    // Background prefetch extends this to ± 9 months after render.
+    // Month: ± 2 months for initial fast load; prefetch extends to ± 9
     return {
       start: addMonths(startOfMonth(this._cursor), -2),
       end:   addMonths(endOfMonth(this._cursor),    2),
     };
   }
 
-  // Silently extend the loaded range for the month view scroll area
+  // Background prefetch for the full month scroll range.
+  // Uses inPlace=true so event chips update without touching the scroll container.
   _prefetchMonthRange() {
-    const full = {
-      start: addMonths(startOfMonth(this._cursor), -3),
-      end:   addMonths(endOfMonth(this._cursor),    9),
-    };
-    // Run without spinner or update_entity — just fills in the gaps quietly
-    this._fetchEvents(false, { forceUpdate: false, range: full });
+    this._fetchEvents(false, {
+      forceUpdate: false,
+      inPlace: true,
+      range: {
+        start: addMonths(startOfMonth(this._cursor), -3),
+        end:   addMonths(endOfMonth(this._cursor),    9),
+      },
+    });
+  }
+
+  // Surgically update only event chip HTML in existing day cells.
+  // No DOM restructuring = no scroll position change.
+  _updateMonthEventsInPlace() {
+    const scrollEl = this.shadowRoot.querySelector("#cc-month-scroll");
+    if (!scrollEl) { this._renderMainContent(); return; }
+
+    const use24     = this._config?.timeFormat === "24h";
+    const allEvents = this._filteredEvents();
+
+    scrollEl.querySelectorAll(".day-cell[data-date]").forEach(cell => {
+      const day    = new Date(cell.dataset.date + "T12:00:00");
+      const events = this._eventsOnDay(day);
+      const MAX    = 3;
+
+      const chips = events.slice(0, MAX).map(ev => {
+        const idx = allEvents.indexOf(ev);
+        if (!ev.start?.dateTime) {
+          const tc = textOnBg(ev._color);
+          return `<div class="event-chip" data-idx="${idx}"
+            style="background:${ev._color};color:${tc};border-left:none;font-weight:600;"
+            title="${ev.summary||"Event"}">${ev.summary||"Event"}</div>`;
+        }
+        const t = formatTime(new Date(ev.start.dateTime), use24);
+        return `<div class="event-chip" data-idx="${idx}"
+          style="background:${ev._color}22;color:${ev._color};border-left:3px solid ${ev._color};"
+          title="${ev.summary||"Event"}">
+          <span style="opacity:0.7;font-size:10px;">${t} </span>${ev.summary||"Event"}
+        </div>`;
+      }).join("");
+
+      const overflow = events.length > MAX
+        ? `<div class="more-events">+${events.length - MAX} more</div>` : "";
+
+      const chipsEl = cell.querySelector(".event-chips");
+      if (!chipsEl) return;
+      chipsEl.innerHTML = chips + overflow;
+
+      // Re-attach click handlers on the new chips
+      chipsEl.querySelectorAll(".event-chip").forEach(chip =>
+        chip.addEventListener("click", e => {
+          e.stopPropagation();
+          this._openDetailModal(allEvents[parseInt(chip.dataset.idx)]);
+        })
+      );
+      chipsEl.querySelectorAll(".more-events").forEach(more =>
+        more.addEventListener("click", e => {
+          e.stopPropagation();
+          const iso = cell.dataset.date;
+          if (iso) { this._cursor = new Date(iso + "T12:00:00"); this._switchView("week"); }
+        })
+      );
+    });
+    this._tickUpdated();
   }
 
   _calendarEntities() {
