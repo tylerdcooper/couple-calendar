@@ -237,10 +237,11 @@ function buildStyles(cfg) {
   .now-line::before { content:""; width:10px; height:10px; border-radius:50%; background:${p.today}; position:absolute; left:-5px; top:-4px; }
   .now-time-label { position: absolute; right: calc(100% + 6px); top: -8px; font-size: 10px; font-weight: 800; color: ${p.today}; white-space: nowrap; line-height: 1; }
   .week-event {
-    position: absolute; left: 3px; right: 3px; border-radius: 6px;
+    position: absolute; border-radius: 6px;
     padding: 4px 7px; font-size: 12px; font-weight: 500; cursor: pointer;
     overflow: hidden; z-index: 2; transition: opacity 0.1s;
     border-left: 3px solid rgba(255,255,255,0.25);
+    box-sizing: border-box;
   }
   .week-event:active { opacity: 0.75; }
   .week-event-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -394,6 +395,61 @@ const COLOR_PRESETS = [
 ];
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // refresh events every 5 minutes
+
+// ─── Overlap layout (Google Calendar / Fantastical style) ─────────────────────
+// Assigns _col and _numCols to each timed event so overlapping events
+// are rendered side-by-side instead of stacked on top of each other.
+function layoutTimedEvents(events) {
+  if (events.length <= 1) {
+    events.forEach(ev => { ev._col = 0; ev._numCols = 1; });
+    return events;
+  }
+
+  // Sort by start time, then longer events first
+  const sorted = [...events].sort((a, b) => {
+    const sa = parseEventDT(a.start), sb = parseEventDT(b.start);
+    const diff = (sa || 0) - (sb || 0);
+    if (diff !== 0) return diff;
+    const ea = a.end?.dateTime ? parseEventDT(a.end) : sa;
+    const eb = b.end?.dateTime ? parseEventDT(b.end) : sb;
+    return (eb - sb) - (ea - sa); // longer first within same start time
+  });
+
+  function evOverlap(a, b) {
+    const sa = parseEventDT(a.start);
+    const ea = a.end?.dateTime ? parseEventDT(a.end) : addDays(sa, 1/48);
+    const sb = parseEventDT(b.start);
+    const eb = b.end?.dateTime ? parseEventDT(b.end) : addDays(sb, 1/48);
+    return sa < eb && sb < ea;
+  }
+
+  // Greedily assign each event to the first available column
+  const columns = []; // columns[c] = list of events placed in column c
+  sorted.forEach(ev => {
+    let placed = false;
+    for (let c = 0; c < columns.length; c++) {
+      if (!columns[c].some(other => evOverlap(ev, other))) {
+        columns[c].push(ev);
+        ev._col = c;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      ev._col = columns.length;
+      columns.push([ev]);
+    }
+  });
+
+  // For each event, _numCols = how many columns are active at its time
+  // = (max column index among all events it overlaps with) + 1
+  sorted.forEach(ev => {
+    const peers = sorted.filter(other => evOverlap(ev, other));
+    ev._numCols = Math.max(...peers.map(o => (o._col ?? 0) + 1));
+  });
+
+  return sorted;
+}
 
 // ─── Panel component ──────────────────────────────────────────────────────────
 
@@ -864,14 +920,26 @@ class CoupleCalendarPanel extends HTMLElement {
     }).join("");
 
     const timeCols = days.map((d, di) => {
-      const timedEvs = this._eventsOnDay(d).filter(ev => !!ev.start?.dateTime);
+      const timedEvs = layoutTimedEvents(
+        this._eventsOnDay(d).filter(ev => !!ev.start?.dateTime)
+      );
       const blocks = timedEvs.map(ev => {
-        const s    = new Date(ev.start.dateTime);
-        const e    = ev.end?.dateTime ? new Date(ev.end.dateTime) : addDays(s, 1/24);
-        const top  = ((s.getHours() * 60 + s.getMinutes()) / 60) * HOUR_H;
-        const h    = Math.max(28, ((e - s) / 3600000) * HOUR_H);
-        const tc   = textOnBg(ev._color);
-        return `<div class="week-event" style="top:${top}px;height:${h}px;background:${ev._color};color:${tc};"
+        const s        = new Date(ev.start.dateTime);
+        const e        = ev.end?.dateTime ? new Date(ev.end.dateTime) : addDays(s, 1/24);
+        const top      = ((s.getHours() * 60 + s.getMinutes()) / 60) * HOUR_H;
+        const h        = Math.max(28, ((e - s) / 3600000) * HOUR_H);
+        const tc       = textOnBg(ev._color);
+        const numCols  = ev._numCols || 1;
+        const col      = ev._col || 0;
+        const colW     = 100 / numCols;
+        const leftPct  = col * colW;
+        const gap      = numCols > 1 ? 2 : 0; // 2px gutter between side-by-side events
+        return `<div class="week-event"
+          style="top:${top}px;height:${h}px;
+                 left:calc(${leftPct}% + 2px);
+                 width:calc(${colW}% - ${2 + gap}px);
+                 right:auto;
+                 background:${ev._color};color:${tc};"
           data-evjson="${encodeURIComponent(JSON.stringify(ev))}">
           <div class="week-event-title">${ev.summary||"Event"}</div>
           ${h > 38 ? `<div class="week-event-time">${formatTime(s, use24)}</div>` : ""}
