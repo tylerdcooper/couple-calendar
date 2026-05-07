@@ -83,11 +83,13 @@ function buildStyles(cfg) {
 
   /* ── Header ── */
   .header {
-    display: flex; align-items: center; gap: 16px;
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
     padding: 14px 24px;
     background: ${p.surface}; border-bottom: 1px solid ${p.border};
     flex-shrink: 0; z-index: 10;
   }
+  .header-left  { display: flex; align-items: center; gap: 8px; }
+  .header-right { display: flex; align-items: center; justify-content: flex-end; }
   .menu-btn {
     width: 44px; height: 44px; border-radius: 10px; border: none; cursor: pointer;
     background: transparent; color: ${p.textSub}; flex-shrink: 0;
@@ -117,8 +119,6 @@ function buildStyles(cfg) {
   .today-btn:hover  { background: ${p.surfaceAlt}; color: ${p.text}; border-color: ${p.borderFocus}; }
   .today-btn:active { background: ${p.surfaceHov}; }
 
-  .header-spacer { flex: 1; }
-
   .view-switcher { display: flex; background: ${p.surfaceAlt}; border-radius: 10px; padding: 3px; gap: 2px; }
   .view-btn {
     padding: 8px 16px; border-radius: 8px; border: none;
@@ -127,12 +127,13 @@ function buildStyles(cfg) {
   }
   .view-btn.active { background: ${p.surface}; color: ${p.text}; box-shadow: 0 0 4px ${p.shadow}; margin: 1px; }
 
-  /* Clock + refresh — right side */
-  .header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-  .header-clock { text-align: right; }
+  /* Clock — centered in header grid */
+  .header-clock { display: flex; flex-direction: column; align-items: center; }
   .header-clock-time { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; line-height: 1.1; }
   .header-clock-date { font-size: 12px; color: ${p.textSub}; margin-top: 1px; }
-  .header-updated { display: flex; align-items: center; gap: 4px; color: ${p.textMuted}; font-size: 12px; white-space: nowrap; }
+
+  /* Refresh + timestamp — lives in the legend bar */
+  .legend-refresh { display: flex; align-items: center; gap: 4px; color: ${p.textMuted}; font-size: 12px; white-space: nowrap; }
   .refresh-icon-btn {
     background: none; border: none; cursor: pointer; padding: 2px;
     color: ${p.textMuted}; display: flex; align-items: center;
@@ -630,7 +631,7 @@ class CoupleCalendarPanel extends HTMLElement {
   }
 
   async _manualRefresh() {
-    const btn = this.shadowRoot.querySelector(".refresh-icon-btn");
+    const btn = this.shadowRoot.getElementById("cc-refresh-btn");
     if (btn) btn.classList.add("spinning");
     await this._fetchEvents(false);
     if (btn) btn.classList.remove("spinning");
@@ -810,35 +811,29 @@ class CoupleCalendarPanel extends HTMLElement {
     if (!el) return;
 
     el.innerHTML = `
-      <button class="menu-btn" id="cc-menu-btn" aria-label="Settings">${ICON.menu}</button>
-
-      <div class="header-nav">
-        <button class="nav-btn" id="cc-prev-btn" aria-label="Previous">${ICON.chevL}</button>
-        <div class="header-title-wrap">
-          <div class="header-month">${title.main}</div>
-          ${title.sub ? `<div class="header-sub">${title.sub}</div>` : ""}
+      <div class="header-left">
+        <button class="menu-btn" id="cc-menu-btn" aria-label="Settings">${ICON.menu}</button>
+        <div class="header-nav">
+          <button class="nav-btn" id="cc-prev-btn" aria-label="Previous">${ICON.chevL}</button>
+          <div class="header-title-wrap">
+            <div class="header-month">${title.main}</div>
+            ${title.sub ? `<div class="header-sub">${title.sub}</div>` : ""}
+          </div>
+          <button class="nav-btn" id="cc-next-btn" aria-label="Next">${ICON.chevR}</button>
         </div>
-        <button class="nav-btn" id="cc-next-btn" aria-label="Next">${ICON.chevR}</button>
+        <button class="today-btn" id="cc-today-btn">Today</button>
       </div>
 
-      <button class="today-btn" id="cc-today-btn">Today</button>
-
-      <div class="header-spacer"></div>
-
-      <div class="view-switcher">
-        <button class="view-btn ${this._view==="month"  ?"active":""}" data-view="month">Month</button>
-        <button class="view-btn ${this._view==="week"   ?"active":""}" data-view="week">Week</button>
-        <button class="view-btn ${this._view==="agenda" ?"active":""}" data-view="agenda">Agenda</button>
+      <div class="header-clock">
+        <div class="header-clock-time" id="cc-clock-time"></div>
+        <div class="header-clock-date" id="cc-clock-date"></div>
       </div>
 
       <div class="header-right">
-        <div class="header-clock">
-          <div class="header-clock-time" id="cc-clock-time"></div>
-          <div class="header-clock-date" id="cc-clock-date"></div>
-        </div>
-        <div class="header-updated" id="cc-updated">
-          <button class="refresh-icon-btn" id="cc-refresh-btn" aria-label="Refresh">${ICON.refresh}</button>
-          <span id="cc-updated-text"></span>
+        <div class="view-switcher">
+          <button class="view-btn ${this._view==="month"  ?"active":""}" data-view="month">Month</button>
+          <button class="view-btn ${this._view==="week"   ?"active":""}" data-view="week">Week</button>
+          <button class="view-btn ${this._view==="agenda" ?"active":""}" data-view="agenda">Agenda</button>
         </div>
       </div>
     `;
@@ -850,7 +845,6 @@ class CoupleCalendarPanel extends HTMLElement {
     el.querySelector("#cc-prev-btn").addEventListener("click",  () => this._navigate(-1));
     el.querySelector("#cc-next-btn").addEventListener("click",  () => this._navigate(1));
     el.querySelector("#cc-today-btn").addEventListener("click", () => this._goToday());
-    el.querySelector("#cc-refresh-btn").addEventListener("click", () => this._manualRefresh());
     el.querySelectorAll(".view-btn").forEach(btn =>
       btn.addEventListener("click", () => this._switchView(btn.dataset.view))
     );
@@ -901,7 +895,13 @@ class CoupleCalendarPanel extends HTMLElement {
           ${f.label}
         </button>
       `).join("")}
+      <div style="flex:1;"></div>
+      <div class="legend-refresh">
+        <button class="refresh-icon-btn" id="cc-refresh-btn" aria-label="Refresh">${ICON.refresh}</button>
+        <span id="cc-updated-text"></span>
+      </div>
     `;
+    this._tickUpdated();
 
     el.querySelectorAll(".legend-filter").forEach(btn =>
       btn.addEventListener("click", () => {
@@ -910,6 +910,7 @@ class CoupleCalendarPanel extends HTMLElement {
         this._renderMainContent();
       })
     );
+    el.querySelector("#cc-refresh-btn")?.addEventListener("click", () => this._manualRefresh());
   }
 
   _renderMainContent() {
