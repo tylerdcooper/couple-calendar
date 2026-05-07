@@ -924,7 +924,7 @@ class CoupleCalendarPanel extends HTMLElement {
       .sort((a, b) => (parseEventDT(a.start)||0) - (parseEventDT(b.start)||0));
 
     if (!events.length) {
-      el.innerHTML = `<div class="agenda-view"><div class="agenda-empty">No upcoming events on the selected calendars.<br>Add events in Google Calendar on your phone — they'll appear here within a few minutes.</div></div>`;
+      el.innerHTML = `<div class="agenda-view"><div class="agenda-empty">No upcoming events on the selected calendars.<br>Add events in Google Calendar on your phone — they'll appear here within seconds.</div></div>`;
       return;
     }
 

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Set Up Couple Calendar",
-        "description": "Select which calendar entities belong to each partner. Colors, theme, and display preferences can be changed any time from the in-app settings drawer.",
+        "description": "Select which Google Calendar entities belong to each partner. Set up the Google Calendar integration first (Settings → Integrations → Google Calendar) — all calendars visible in your Google account will appear here, including shared and subscribed calendars.",
         "data": {
           "person_a_name": "Partner 1 Name",
           "person_a_calendar": "Partner 1 Calendar",
