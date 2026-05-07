@@ -83,54 +83,64 @@ function buildStyles(cfg) {
 
   /* ── Header ── */
   .header {
-    display: flex; align-items: center; gap: 12px;
-    padding: 16px 24px 14px;
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 24px;
     background: ${p.surface}; border-bottom: 1px solid ${p.border};
     flex-shrink: 0; z-index: 10;
   }
-  .header-left { display: flex; align-items: center; gap: 12px; flex: 1; }
   .menu-btn {
-    width: 48px; height: 48px; border-radius: 12px; border: none; cursor: pointer;
-    background: transparent; color: ${p.textSub};
+    width: 44px; height: 44px; border-radius: 10px; border: none; cursor: pointer;
+    background: transparent; color: ${p.textSub}; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center; transition: background 0.15s;
   }
   .menu-btn:hover, .menu-btn:active { background: ${p.surfaceAlt}; }
+
+  /* Nav cluster: [←] [Title] [→] flanked together, like Google/Fantastical */
+  .header-nav { display: flex; align-items: center; gap: 4px; }
   .nav-btn {
-    width: 44px; height: 44px; border-radius: 10px; border: none; cursor: pointer;
-    background: ${p.surfaceAlt}; color: ${p.text};
+    width: 36px; height: 36px; border-radius: 8px; border: none; cursor: pointer;
+    background: transparent; color: ${p.textSub};
     display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s, transform 0.1s; flex-shrink: 0;
+    transition: background 0.12s, transform 0.1s; flex-shrink: 0;
   }
-  .nav-btn:active { transform: scale(0.93); background: ${p.surfaceHov}; }
-  .header-title { flex: 1; }
-  .header-month { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; line-height: 1; }
-  .header-year  { font-size: 14px; color: ${p.textSub}; margin-top: 2px; }
-  .header-clock { text-align: right; flex-shrink: 0; }
-  .header-clock-time { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; line-height: 1; }
-  .header-clock-date { font-size: 14px; color: ${p.textSub}; margin-top: 2px; }
+  .nav-btn:hover  { background: ${p.surfaceAlt}; color: ${p.text}; }
+  .nav-btn:active { transform: scale(0.9); background: ${p.surfaceHov}; }
+  .header-title-wrap { min-width: 180px; text-align: center; cursor: default; }
+  .header-month { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; line-height: 1.1; white-space: nowrap; }
+  .header-sub   { font-size: 12px; color: ${p.textSub}; margin-top: 1px; }
+
   .today-btn {
-    padding: 10px 20px; border-radius: 10px; border: 1px solid ${p.border};
-    background: transparent; color: ${p.text}; cursor: pointer; font-size: 15px; font-weight: 500;
-    transition: background 0.15s;
+    padding: 8px 16px; border-radius: 8px; border: 1px solid ${p.border};
+    background: transparent; color: ${p.textSub}; cursor: pointer; font-size: 13px; font-weight: 600;
+    transition: all 0.15s; flex-shrink: 0; white-space: nowrap;
   }
-  .today-btn:active { background: ${p.surfaceAlt}; }
-  .refresh-btn {
-    width: 44px; height: 44px; border-radius: 10px; border: none; cursor: pointer;
-    background: ${p.surfaceAlt}; color: ${p.textSub};
-    display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s, transform 0.15s;
-  }
-  .refresh-btn:active { background: ${p.surfaceHov}; }
-  .refresh-btn.spinning svg { animation: spin 0.7s linear infinite; }
-  .view-switcher { display: flex; gap: 6px; }
+  .today-btn:hover  { background: ${p.surfaceAlt}; color: ${p.text}; border-color: ${p.borderFocus}; }
+  .today-btn:active { background: ${p.surfaceHov}; }
+
+  .header-spacer { flex: 1; }
+
+  .view-switcher { display: flex; background: ${p.surfaceAlt}; border-radius: 10px; padding: 3px; gap: 2px; }
   .view-btn {
-    padding: 10px 18px; border-radius: 10px; border: 1px solid ${p.border};
-    background: transparent; color: ${p.textSub}; cursor: pointer; font-size: 14px; font-weight: 500;
-    transition: all 0.15s;
+    padding: 8px 16px; border-radius: 8px; border: none;
+    background: transparent; color: ${p.textSub}; cursor: pointer; font-size: 13px; font-weight: 600;
+    transition: all 0.15s; white-space: nowrap;
   }
-  .view-btn.active {
-    background: ${aColor}22; color: ${aColor}; border-color: ${aColor}55;
+  .view-btn.active { background: ${p.surface}; color: ${p.text}; box-shadow: 0 1px 4px ${p.shadow}; }
+
+  /* Clock + refresh — right side */
+  .header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .header-clock { text-align: right; }
+  .header-clock-time { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; line-height: 1.1; }
+  .header-clock-date { font-size: 12px; color: ${p.textSub}; margin-top: 1px; }
+  .header-updated { display: flex; align-items: center; gap: 4px; color: ${p.textMuted}; font-size: 12px; white-space: nowrap; }
+  .refresh-icon-btn {
+    background: none; border: none; cursor: pointer; padding: 2px;
+    color: ${p.textMuted}; display: flex; align-items: center;
+    transition: color 0.15s, transform 0.15s;
   }
+  .refresh-icon-btn:hover  { color: ${p.textSub}; }
+  .refresh-icon-btn:active { transform: scale(0.9); }
+  .refresh-icon-btn.spinning svg { animation: spin 0.7s linear infinite; }
 
   /* ── Legend / filter bar ── */
   .legend {
@@ -608,11 +618,11 @@ class CoupleCalendarPanel extends HTMLElement {
 
     this._loading = false;
     this._renderMainContent();
-    this._renderLegend(); // update "last updated" timestamp
+    this._tickUpdated();
   }
 
   async _manualRefresh() {
-    const btn = this.shadowRoot.querySelector(".refresh-btn");
+    const btn = this.shadowRoot.querySelector(".refresh-icon-btn");
     if (btn) btn.classList.add("spinning");
     await this._fetchEvents(false);
     if (btn) btn.classList.remove("spinning");
@@ -697,6 +707,7 @@ class CoupleCalendarPanel extends HTMLElement {
       setTimeout(() => {
         main.classList.remove("anim-slide-left","anim-slide-right");
         this._shiftCursor(dir);
+        this._renderHeader();        // update title immediately on navigate
         this._renderMainContent();
         main.classList.add(dir > 0 ? "anim-enter-right" : "anim-enter-left");
         setTimeout(() => main.classList.remove("anim-enter-right","anim-enter-left"), 220);
@@ -704,6 +715,7 @@ class CoupleCalendarPanel extends HTMLElement {
       }, 180);
     } else {
       this._shiftCursor(dir);
+      this._renderHeader();
       this._renderMainContent();
       this._fetchEvents(false);
     }
@@ -760,53 +772,50 @@ class CoupleCalendarPanel extends HTMLElement {
   }
 
   _renderHeader() {
-    const cfg  = this._config || {};
-    const fdow = cfg.firstDayOfWeek ?? 0;
-    let titleMain = "", titleSub = "";
-
-    if (this._view === "week") {
-      const ws = this._weekStart();
-      const we = addDays(ws, 6);
-      if (ws.getMonth() === we.getMonth()) {
-        titleMain = MONTH_NAMES[ws.getMonth()]; titleSub = ws.getFullYear();
-      } else {
-        titleMain = `${MONTH_NAMES[ws.getMonth()].slice(0,3)} – ${MONTH_NAMES[we.getMonth()].slice(0,3)}`; titleSub = ws.getFullYear();
-      }
-    } else if (this._view === "agenda") {
-      titleMain = "Upcoming"; titleSub = new Date().getFullYear();
-    } else {
-      titleMain = MONTH_NAMES[this._cursor.getMonth()]; titleSub = this._cursor.getFullYear();
-    }
-
-    const el = this.shadowRoot.getElementById("cc-header");
+    const title = this._headerTitle();
+    const el    = this.shadowRoot.getElementById("cc-header");
     if (!el) return;
+
     el.innerHTML = `
-      <div class="header-left">
-        <button class="menu-btn" id="cc-menu-btn" aria-label="Settings">${ICON.menu}</button>
-        <button class="nav-btn"  id="cc-prev-btn" aria-label="Previous">${ICON.chevL}</button>
-        <button class="nav-btn"  id="cc-next-btn" aria-label="Next">${ICON.chevR}</button>
-        <div class="header-title">
-          <div class="header-month">${titleMain}</div>
-          <div class="header-year">${titleSub}</div>
+      <button class="menu-btn" id="cc-menu-btn" aria-label="Settings">${ICON.menu}</button>
+
+      <div class="header-nav">
+        <button class="nav-btn" id="cc-prev-btn" aria-label="Previous">${ICON.chevL}</button>
+        <div class="header-title-wrap">
+          <div class="header-month">${title.main}</div>
+          ${title.sub ? `<div class="header-sub">${title.sub}</div>` : ""}
+        </div>
+        <button class="nav-btn" id="cc-next-btn" aria-label="Next">${ICON.chevR}</button>
+      </div>
+
+      <button class="today-btn" id="cc-today-btn">Today</button>
+
+      <div class="header-spacer"></div>
+
+      <div class="view-switcher">
+        <button class="view-btn ${this._view==="month"  ?"active":""}" data-view="month">Month</button>
+        <button class="view-btn ${this._view==="week"   ?"active":""}" data-view="week">Week</button>
+        <button class="view-btn ${this._view==="agenda" ?"active":""}" data-view="agenda">Agenda</button>
+      </div>
+
+      <div class="header-right">
+        <div class="header-clock">
+          <div class="header-clock-time" id="cc-clock-time"></div>
+          <div class="header-clock-date" id="cc-clock-date"></div>
+        </div>
+        <div class="header-updated" id="cc-updated">
+          <button class="refresh-icon-btn" id="cc-refresh-btn" aria-label="Refresh">${ICON.refresh}</button>
+          <span id="cc-updated-text"></span>
         </div>
       </div>
-      <div class="header-clock" id="cc-clock">
-        <div class="header-clock-time" id="cc-clock-time"></div>
-        <div class="header-clock-date" id="cc-clock-date"></div>
-      </div>
-      <button class="today-btn"   id="cc-today-btn">Today</button>
-      <button class="refresh-btn" id="cc-refresh-btn" aria-label="Refresh">${ICON.refresh}</button>
-      <div class="view-switcher">
-        <button class="view-btn ${this._view==="month"  ? "active":""}" data-view="month">Month</button>
-        <button class="view-btn ${this._view==="week"   ? "active":""}" data-view="week">Week</button>
-        <button class="view-btn ${this._view==="agenda" ? "active":""}" data-view="agenda">Agenda</button>
-      </div>
     `;
-    this._tickClock();
 
-    el.querySelector("#cc-menu-btn").addEventListener("click", () => this._openDrawer());
-    el.querySelector("#cc-prev-btn").addEventListener("click", () => this._navigate(-1));
-    el.querySelector("#cc-next-btn").addEventListener("click", () => this._navigate(1));
+    this._tickClock();
+    this._tickUpdated();
+
+    el.querySelector("#cc-menu-btn").addEventListener("click",  () => this._openDrawer());
+    el.querySelector("#cc-prev-btn").addEventListener("click",  () => this._navigate(-1));
+    el.querySelector("#cc-next-btn").addEventListener("click",  () => this._navigate(1));
     el.querySelector("#cc-today-btn").addEventListener("click", () => this._goToday());
     el.querySelector("#cc-refresh-btn").addEventListener("click", () => this._manualRefresh());
     el.querySelectorAll(".view-btn").forEach(btn =>
@@ -814,13 +823,34 @@ class CoupleCalendarPanel extends HTMLElement {
     );
   }
 
-  _renderLegend() {
-    let lastStr = "";
-    if (this._lastFetched) {
-      const diff = Math.round((Date.now() - this._lastFetched) / 60000);
-      lastStr = diff < 1 ? "Updated just now" : `Updated ${diff}m ago`;
+  _headerTitle() {
+    if (this._view === "week") {
+      const ws = this._weekStart();
+      const we = addDays(ws, 6);
+      const sameMonth = ws.getMonth() === we.getMonth();
+      const sameYear  = ws.getFullYear() === we.getFullYear();
+      const dFmt = d => d.toLocaleDateString([], { month: "short", day: "numeric" });
+      if (sameMonth) {
+        return { main: `${MONTH_NAMES[ws.getMonth()]} ${ws.getDate()}–${we.getDate()}`, sub: ws.getFullYear() };
+      }
+      return { main: `${dFmt(ws)} – ${dFmt(we)}`, sub: sameYear ? ws.getFullYear() : `${ws.getFullYear()} – ${we.getFullYear()}` };
     }
+    if (this._view === "agenda") {
+      const today = new Date();
+      const end   = addDays(today, 90);
+      if (today.getMonth() === end.getMonth()) {
+        return { main: MONTH_NAMES[today.getMonth()], sub: today.getFullYear() };
+      }
+      return {
+        main: `${MONTH_NAMES[today.getMonth()].slice(0,3)} – ${MONTH_NAMES[end.getMonth()].slice(0,3)}`,
+        sub:  today.getFullYear(),
+      };
+    }
+    // Month view
+    return { main: MONTH_NAMES[this._cursor.getMonth()], sub: this._cursor.getFullYear() };
+  }
 
+  _renderLegend() {
     const filters = [
       { id: "all", label: "All", color: null },
       ...(this._calendars || []).map(c => ({ id: c.id, label: c.name, color: c.color })),
@@ -838,8 +868,6 @@ class CoupleCalendarPanel extends HTMLElement {
           ${f.label}
         </button>
       `).join("")}
-      <div class="legend-spacer"></div>
-      ${lastStr ? `<div class="last-updated">${lastStr}</div>` : ""}
     `;
 
     el.querySelectorAll(".legend-filter").forEach(btn =>
@@ -1356,27 +1384,33 @@ class CoupleCalendarPanel extends HTMLElement {
   _startAutoRefresh() {
     this._autoRefreshTimer = setInterval(() => {
       this._fetchEvents(false);
-      this._renderLegend(); // keep "Updated Xm ago" ticking
     }, AUTO_REFRESH_MS);
   }
 
   _tickClock() {
-    const now    = new Date();
-    const use24  = this._config?.timeFormat === "24h";
+    const now   = new Date();
+    const use24 = this._config?.timeFormat === "24h";
     const timeEl = this.shadowRoot.getElementById("cc-clock-time");
     const dateEl = this.shadowRoot.getElementById("cc-clock-date");
     if (timeEl) timeEl.textContent = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: !use24 });
-    if (dateEl) dateEl.textContent = now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+    if (dateEl) dateEl.textContent = now.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  }
+
+  _tickUpdated() {
+    const el = this.shadowRoot.getElementById("cc-updated-text");
+    if (!el) return;
+    if (!this._lastFetched) { el.textContent = ""; return; }
+    const diff = Math.round((Date.now() - this._lastFetched) / 60000);
+    el.textContent = diff < 1 ? "just now" : `${diff}m ago`;
   }
 
   _startClock() {
-    // Tick immediately, then every 10 seconds so the clock stays accurate
     setInterval(() => {
       this._tickClock();
+      this._tickUpdated();
       const newToday = startOfDay(new Date());
       if (!isSameDay(newToday, this._today)) { this._today = newToday; this._renderMainContent(); }
-      else if (this._view === "week") this._renderMainContent(); // move now-line
-      this._renderLegend(); // tick "Updated Xm ago"
+      else if (this._view === "week") this._renderMainContent();
     }, 10_000);
   }
 
