@@ -178,7 +178,7 @@ function buildStyles(cfg) {
   }
   /* Scrollable month view */
   .month-scroll {
-    flex: 1; overflow-y: auto; padding: 4px 4px 0;
+    flex: 1; overflow-y: auto; padding: 0 4px 0;
     scrollbar-width: none;
   }
   .month-scroll::-webkit-scrollbar { display: none; }
