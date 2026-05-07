@@ -585,44 +585,66 @@ class CoupleCalendarPanel extends HTMLElement {
 
     this._view = this._config.defaultView;
     this._render();
-    this._fetchEvents();
+    this._fetchEvents().then(() => {
+      if (this._view === "month") this._prefetchMonthRange();
+    });
   }
 
   // ── Data ───────────────────────────────────────────────────────────────
 
-  async _fetchEvents(showSpinner = true) {
+  // How stale data can be before we force-poll Google again
+  static get STALE_MS() { return 2 * 60 * 1000; } // 2 minutes
+
+  async _fetchEvents(showSpinner = true, { forceUpdate = null, range = null } = {}) {
     if (!this._hass || !this._config) return;
     if (showSpinner) { this._loading = true; this._renderMainContent(); }
 
-    const { start, end } = this._fetchRange();
-    const entities = this._calendarEntities();
+    const { start, end } = range || this._fetchRange();
+    const entities       = this._calendarEntities();
+    const uniqueIds      = [...new Set(entities.map(e => e.entityId).filter(Boolean))];
 
-    // Force HA to re-poll Google Calendar before we read, giving near-instant updates
-    const uniqueIds = [...new Set(entities.map(e => e.entityId).filter(Boolean))];
-    if (uniqueIds.length) {
+    // Only call update_entity when data is stale or explicitly requested.
+    // Skipping it on quick view-switches makes them feel instant.
+    const dataIsStale = !this._lastFetched ||
+      (Date.now() - this._lastFetched.getTime()) > CoupleCalendarPanel.STALE_MS;
+    const shouldUpdate = forceUpdate !== null ? forceUpdate : dataIsStale;
+
+    if (shouldUpdate && uniqueIds.length) {
       try {
         await this._hass.callService("homeassistant", "update_entity", { entity_id: uniqueIds });
-      } catch (_) { /* non-fatal — fall through to fetch cached data */ }
+      } catch (_) { /* non-fatal */ }
     }
 
     try {
-      const all = [];
-      for (const { entityId, who } of entities) {
-        if (!entityId) continue;
-        const s = start.toISOString().replace(".000Z","Z");
-        const e = end.toISOString().replace(".000Z","Z");
-        const data = await this._hass.callApi(
-          "GET",
-          `calendars/${entityId}?start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}`
-        );
-        if (Array.isArray(data)) {
-          for (const ev of data) all.push({ ...ev, _who: who, _color: this._whoColor(who) });
-        }
-      }
-      this._events = all;
+      const sStr = start.toISOString().replace(".000Z","Z");
+      const eStr = end.toISOString().replace(".000Z","Z");
+
+      // Fetch all calendar entities IN PARALLEL instead of sequentially
+      const results = await Promise.all(
+        entities
+          .filter(({ entityId }) => !!entityId)
+          .map(({ entityId, who }) =>
+            this._hass.callApi("GET",
+              `calendars/${entityId}?start=${encodeURIComponent(sStr)}&end=${encodeURIComponent(eStr)}`)
+              .then(data => Array.isArray(data)
+                ? data.map(ev => ({ ...ev, _who: who, _color: this._whoColor(who) }))
+                : [])
+              .catch(() => [])
+          )
+      );
+
+      // Merge into _events: replace events inside the fetched window, keep others
+      const startMs = start.getTime(), endMs = end.getTime();
+      const outside = (this._events || []).filter(ev => {
+        const s = parseEventDT(ev.start);
+        if (!s) return true;
+        const t = s.getTime();
+        return t < startMs || t >= endMs;
+      });
+      this._events = [...outside, ...results.flat()];
       this._lastFetched = new Date();
     } catch (e) {
-      console.error("[CoupleCalendar] fetch error:", e);
+      console.error("[FamilyCalendar] fetch error:", e);
     }
 
     this._loading = false;
@@ -633,7 +655,8 @@ class CoupleCalendarPanel extends HTMLElement {
   async _manualRefresh() {
     const btn = this.shadowRoot.getElementById("cc-refresh-btn");
     if (btn) btn.classList.add("spinning");
-    await this._fetchEvents(false);
+    // Manual refresh always force-updates Google, covers full visible range
+    await this._fetchEvents(false, { forceUpdate: true });
     if (btn) btn.classList.remove("spinning");
   }
 
@@ -645,11 +668,22 @@ class CoupleCalendarPanel extends HTMLElement {
     if (this._view === "agenda") {
       return { start: startOfDay(new Date()), end: addDays(new Date(), 90) };
     }
-    // Fetch the full scrollable range: 3 months before + 9 months after cursor
+    // Month view: load only ± 2 months initially (fast).
+    // Background prefetch extends this to ± 9 months after render.
     return {
+      start: addMonths(startOfMonth(this._cursor), -2),
+      end:   addMonths(endOfMonth(this._cursor),    2),
+    };
+  }
+
+  // Silently extend the loaded range for the month view scroll area
+  _prefetchMonthRange() {
+    const full = {
       start: addMonths(startOfMonth(this._cursor), -3),
       end:   addMonths(endOfMonth(this._cursor),    9),
     };
+    // Run without spinner or update_entity — just fills in the gaps quietly
+    this._fetchEvents(false, { forceUpdate: false, range: full });
   }
 
   _calendarEntities() {
@@ -771,8 +805,11 @@ class CoupleCalendarPanel extends HTMLElement {
 
   _switchView(view) {
     this._view = view;
-    this._render();
-    this._fetchEvents();
+    this._render(); // render immediately with existing _events (no flicker)
+    this._fetchEvents().then(() => {
+      // After fast initial load, silently extend the range in the background
+      if (this._view === "month") this._prefetchMonthRange();
+    });
   }
 
   // ── Rendering ──────────────────────────────────────────────────────────
