@@ -590,7 +590,9 @@ class CoupleCalendarPanel extends HTMLElement {
 
     this._view = this._config.defaultView;
     this._render();
-    this._fetchEvents();
+    this._fetchEvents().then(() => {
+      if (this._view === "month") this._prefetchFullMonthRange();
+    });
   }
 
   // ── Data ───────────────────────────────────────────────────────────────
@@ -660,11 +662,48 @@ class CoupleCalendarPanel extends HTMLElement {
     if (this._view === "agenda") {
       return { start: startOfDay(new Date()), end: addDays(new Date(), 90) };
     }
-    // Month view: current month ± 2 months (5 months total)
+    // Month Phase 1: ± 2 months — fast initial render
     return {
       start: addMonths(startOfMonth(this._cursor), -2),
       end:   addMonths(endOfMonth(this._cursor),    2),
     };
+  }
+
+  // Phase 2: load the full 13-month scroll range in the background.
+  // Guards against view-change mid-flight so there's no cascade or lockup.
+  async _prefetchFullMonthRange() {
+    if (this._view !== "month" || !this._hass) return;
+
+    const start = addMonths(startOfMonth(this._cursor), -3);
+    const end   = addMonths(endOfMonth(this._cursor),    9);
+
+    const entities = this._calendarEntities();
+    if (!entities.length) return;
+
+    const sStr = start.toISOString().replace(".000Z","Z");
+    const eStr = end.toISOString().replace(".000Z","Z");
+
+    try {
+      const results = await Promise.all(
+        entities
+          .filter(({ entityId }) => !!entityId)
+          .map(({ entityId, who }) =>
+            this._hass.callApi("GET",
+              `calendars/${entityId}?start=${encodeURIComponent(sStr)}&end=${encodeURIComponent(eStr)}`)
+              .then(data => Array.isArray(data)
+                ? data.map(ev => ({ ...ev, _who: who, _color: this._whoColor(who) }))
+                : [])
+              .catch(() => [])
+          )
+      );
+
+      // Bail if the user switched views while we were fetching
+      if (this._view !== "month") return;
+
+      this._events = results.flat();
+      // _renderMonthView saves + restores scrollTop, so this is seamless
+      this._renderMainContent();
+    } catch (_) { /* silent — Phase 1 data is still showing */ }
   }
 
   _calendarEntities() {
@@ -790,7 +829,9 @@ class CoupleCalendarPanel extends HTMLElement {
   _switchView(view) {
     this._view = view;
     this._render();
-    this._fetchEvents();
+    this._fetchEvents().then(() => {
+      if (this._view === "month") this._prefetchFullMonthRange();
+    });
   }
 
   // ── Rendering ──────────────────────────────────────────────────────────
