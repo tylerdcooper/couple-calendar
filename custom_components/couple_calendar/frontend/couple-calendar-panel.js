@@ -125,7 +125,7 @@ function buildStyles(cfg) {
     background: transparent; color: ${p.textSub}; cursor: pointer; font-size: 13px; font-weight: 600;
     transition: all 0.15s; white-space: nowrap;
   }
-  .view-btn.active { background: ${p.surface}; color: ${p.text}; box-shadow: 0 1px 4px ${p.shadow}; }
+  .view-btn.active { background: ${p.surface}; color: ${p.text}; box-shadow: 0 0 4px ${p.shadow}; margin: 1px; }
 
   /* Clock + refresh — right side */
   .header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
@@ -711,19 +711,26 @@ class CoupleCalendarPanel extends HTMLElement {
   // ── Navigation ─────────────────────────────────────────────────────────
 
   _navigate(dir) {
-    // Month view: smooth-scroll to the target month section instead of re-rendering
+    // Month view: smooth-scroll to the adjacent month instead of re-rendering.
+    // Read the currently displayed month from the header text (not _cursor, which
+    // stays fixed so switching to Week/Agenda returns to the right period).
     if (this._view === "month") {
-      this._shiftCursor(dir);
-      const scrollEl = this.shadowRoot.querySelector("#cc-month-scroll");
-      const target   = scrollEl?.querySelector(`[data-month-key="${this._cursor.getFullYear()}-${this._cursor.getMonth()}"]`);
+      const scrollEl  = this.shadowRoot.querySelector("#cc-month-scroll");
+      const monthEl   = this.shadowRoot.querySelector(".header-month");
+      const subEl     = this.shadowRoot.querySelector(".header-sub");
+      const curM      = MONTH_NAMES.indexOf(monthEl?.textContent?.trim() ?? "");
+      const curY      = parseInt(subEl?.textContent) || this._cursor.getFullYear();
+      const targetDate = addMonths(new Date(curY, curM < 0 ? this._cursor.getMonth() : curM, 1), dir);
+      const key        = `${targetDate.getFullYear()}-${targetDate.getMonth()}`;
+      const target     = scrollEl?.querySelector(`[data-month-key="${key}"]`);
       if (target && scrollEl) {
         scrollEl.scrollTo({ top: target.offsetTop - 2, behavior: "smooth" });
       } else {
-        // Month not rendered yet — re-render the scroll view
+        // Target month not rendered — shift cursor and re-render
+        this._shiftCursor(dir);
         this._renderMainContent();
+        this._renderHeader();
       }
-      this._renderHeader();
-      this._fetchEvents(false);
       return;
     }
 
@@ -921,6 +928,9 @@ class CoupleCalendarPanel extends HTMLElement {
     const cfg  = this._config || {};
     const fdow = cfg.firstDayOfWeek === "today" ? 0 : parseInt(cfg.firstDayOfWeek ?? 0);
 
+    // Preserve scroll position across event-fetch re-renders
+    const prevScroll = el.querySelector("#cc-month-scroll")?.scrollTop ?? null;
+
     const dayLabels = Array.from({ length: 7 }, (_, i) => DAY_NAMES_SHORT[(fdow + i) % 7]);
 
     // Render 3 months before cursor through 9 months after = 13 months total
@@ -938,13 +948,18 @@ class CoupleCalendarPanel extends HTMLElement {
       </div>
     `;
 
-    // Scroll to the cursor month (no animation — instant positioning)
     const scrollEl = el.querySelector("#cc-month-scroll");
-    const target   = scrollEl?.querySelector(`[data-month-key="${this._cursor.getFullYear()}-${this._cursor.getMonth()}"]`);
-    if (target && scrollEl) scrollEl.scrollTop = target.offsetTop - 2;
-
-    // Update header title as user scrolls
-    scrollEl?.addEventListener("scroll", () => this._onMonthScroll(scrollEl), { passive: true });
+    if (scrollEl) {
+      if (prevScroll !== null) {
+        // Restore position after event-fetch re-render
+        scrollEl.scrollTop = prevScroll;
+      } else {
+        // Fresh render — scroll to the cursor month
+        const target = scrollEl.querySelector(`[data-month-key="${this._cursor.getFullYear()}-${this._cursor.getMonth()}"]`);
+        if (target) scrollEl.scrollTop = target.offsetTop - 2;
+      }
+      scrollEl.addEventListener("scroll", () => this._onMonthScroll(scrollEl), { passive: true });
+    }
 
     this._bindMonthEvents(el);
   }
@@ -978,7 +993,7 @@ class CoupleCalendarPanel extends HTMLElement {
   }
 
   _onMonthScroll(scrollEl) {
-    // Find the month section whose label is at or just above the top third of the viewport
+    // Find the month section at the top quarter of the viewport
     const threshold = scrollEl.scrollTop + scrollEl.clientHeight * 0.25;
     const sections  = Array.from(scrollEl.querySelectorAll(".month-section"));
     let active = sections[0];
@@ -988,15 +1003,14 @@ class CoupleCalendarPanel extends HTMLElement {
     if (!active) return;
     const y = parseInt(active.dataset.year);
     const m = parseInt(active.dataset.month);
-    if (y !== this._cursor.getFullYear() || m !== this._cursor.getMonth()) {
-      this._cursor = new Date(y, m, 1);
-      // Update just the title text nodes — no full header re-render (avoids scroll jump)
-      const t = this._headerTitle();
-      const monthEl = this.shadowRoot.querySelector(".header-month");
-      const subEl   = this.shadowRoot.querySelector(".header-sub");
-      if (monthEl) monthEl.textContent = t.main;
-      if (subEl)   subEl.textContent   = t.sub ?? "";
-    }
+
+    // Update ONLY the header display — do NOT change _cursor so switching
+    // to Week/Agenda view always returns to the original navigation position.
+    const monthEl = this.shadowRoot.querySelector(".header-month");
+    const subEl   = this.shadowRoot.querySelector(".header-sub");
+    const isCurrentYear = y === new Date().getFullYear();
+    if (monthEl) monthEl.textContent = MONTH_NAMES[m];
+    if (subEl)   subEl.textContent   = isCurrentYear ? y : y;
   }
 
   _bindMonthEvents(el) {
