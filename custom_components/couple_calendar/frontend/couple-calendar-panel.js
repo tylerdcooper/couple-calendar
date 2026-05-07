@@ -70,7 +70,7 @@ function buildStyles(cfg) {
     shadow: "rgba(0,0,0,0.18)", overlay: "rgba(0,0,0,0.55)",
   };
 
-  const aColor = cfg.personA?.color || "#818CF8";
+  const aColor = (cfg.calendars?.[0]?.color) || cfg.personA?.color || "#818CF8";
 
   return `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -321,6 +321,40 @@ function buildStyles(cfg) {
   }
   .save-btn:active { opacity: 0.85; transform: scale(0.98); }
 
+  /* ── Calendar cards (settings drawer) ── */
+  .cal-card {
+    background: ${p.surfaceAlt}; border: 1px solid ${p.border}; border-radius: 14px;
+    padding: 16px; margin-bottom: 12px;
+  }
+  .cal-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .cal-name-input {
+    flex: 1; padding: 10px 14px; border-radius: 10px; border: 1px solid ${p.border};
+    background: ${p.surface}; color: ${p.text}; font-size: 15px; font-weight: 600; outline: none;
+    transition: border-color 0.15s;
+  }
+  .cal-name-input:focus { border-color: ${p.borderFocus}; }
+  .cal-delete-btn {
+    width: 34px; height: 34px; border-radius: 8px; border: none; cursor: pointer;
+    background: ${p.surfaceHov}; color: ${p.textSub};
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    transition: background 0.15s; font-size: 14px;
+  }
+  .cal-delete-btn:active { background: #ef444430; color: #ef4444; }
+  .cal-card-color-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: ${p.textSub}; margin-top: 4px; }
+  .cal-entity-select {
+    width: 100%; margin-top: 8px; padding: 6px 4px; border-radius: 10px;
+    border: 1px solid ${p.border}; background: ${p.surface}; color: ${p.text};
+    font-size: 13px; outline: none;
+  }
+  .cal-entity-select option { padding: 6px 10px; }
+  .cal-entity-select option:checked { background: ${p.surfaceHov}; }
+  .add-cal-btn {
+    width: 100%; padding: 12px; border-radius: 10px; border: 2px dashed ${p.border};
+    background: transparent; color: ${p.textSub}; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s; margin-top: 4px;
+  }
+  .add-cal-btn:hover { border-color: ${p.borderFocus}; color: ${p.text}; }
+
   /* ── Event detail modal ── */
   .modal-overlay {
     position: fixed; inset: 0; background: ${p.overlay}; z-index: 200;
@@ -494,25 +528,41 @@ class CoupleCalendarPanel extends HTMLElement {
   _applyConfig() {
     if (!this._panelConfig) return;
     const pc = this._panelConfig;
-    this._config = {
-      personA: pc.personA || { name: "Partner 1", color: "#818CF8", calendar: "" },
-      personB: pc.personB || { name: "Partner 2", color: "#F472B6", calendar: "" },
-      joint:   pc.joint   || { color: "#34D399",  calendar: "" },
-      firstDayOfWeek: pc.firstDayOfWeek ?? 0,
-      timeFormat:     pc.timeFormat  || "12h",
-      defaultView:    pc.defaultView || "month",
-      theme:          pc.theme       || "dark",
-    };
     const ls = this._localSettings;
-    if (ls.personAName)  this._config.personA.name  = ls.personAName;
-    if (ls.personAColor) this._config.personA.color = ls.personAColor;
-    if (ls.personBName)  this._config.personB.name  = ls.personBName;
-    if (ls.personBColor) this._config.personB.color = ls.personBColor;
-    if (ls.jointColor)   this._config.joint.color   = ls.jointColor;
-    if (ls.theme)        this._config.theme          = ls.theme;
-    if (ls.timeFormat)   this._config.timeFormat     = ls.timeFormat;
-    if (ls.firstDayOfWeek !== undefined) this._config.firstDayOfWeek = ls.firstDayOfWeek;
-    if (ls.defaultView)  this._config.defaultView    = ls.defaultView;
+
+    // Display preferences — localStorage overrides HA config
+    this._config = {
+      firstDayOfWeek: ls.firstDayOfWeek !== undefined ? ls.firstDayOfWeek : (pc.firstDayOfWeek ?? 0),
+      timeFormat:     ls.timeFormat  || pc.timeFormat  || "12h",
+      defaultView:    ls.defaultView || pc.defaultView || "month",
+      theme:          ls.theme       || pc.theme       || "dark",
+    };
+
+    // Calendars: localStorage overrides HA config (allows in-app add/remove)
+    // Also handles migration from v1 personA/personB/joint format.
+    if (ls.calendars && ls.calendars.length > 0) {
+      this._calendars = ls.calendars;
+    } else if (pc.calendars && pc.calendars.length > 0) {
+      this._calendars = pc.calendars;
+    } else {
+      // Migrate from v1 panel config format
+      this._calendars = [];
+      const colors = ["#818CF8","#F472B6","#34D399","#FBBF24","#60A5FA","#FB923C"];
+      let idx = 0;
+      const toArr = v => !v ? [] : Array.isArray(v) ? v.filter(Boolean) : [v];
+      if (pc.personA?.calendar) {
+        this._calendars.push({ id:"cal_0", name: pc.personA.name||"Partner 1",
+          color: pc.personA.color||colors[idx], entities: toArr(pc.personA.calendar) }); idx++;
+      }
+      if (pc.personB?.calendar) {
+        this._calendars.push({ id:"cal_1", name: pc.personB.name||"Partner 2",
+          color: pc.personB.color||colors[idx], entities: toArr(pc.personB.calendar) }); idx++;
+      }
+      if (pc.joint?.calendar) {
+        this._calendars.push({ id:"cal_2", name:"Together",
+          color: pc.joint.color||colors[idx], entities: toArr(pc.joint.calendar) });
+      }
+    }
 
     this._view = this._config.defaultView;
     this._render();
@@ -574,28 +624,26 @@ class CoupleCalendarPanel extends HTMLElement {
   }
 
   _calendarEntities() {
-    const { personA, personB, joint } = this._config;
-    // Handles both legacy string and new array (multiple calendars per person)
-    const toArr = v => !v ? [] : Array.isArray(v) ? v.filter(Boolean) : [v];
     const list = [];
-    for (const id of toArr(personA?.calendar)) list.push({ entityId: id, who: "a" });
-    for (const id of toArr(personB?.calendar)) list.push({ entityId: id, who: "b" });
-    for (const id of toArr(joint?.calendar))   list.push({ entityId: id, who: "joint" });
+    for (const cal of (this._calendars || [])) {
+      const entities = Array.isArray(cal.entities) ? cal.entities : (cal.entities ? [cal.entities] : []);
+      for (const entityId of entities) {
+        if (entityId) list.push({ entityId, who: cal.id });
+      }
+    }
     return list;
   }
 
+  _calById(id) {
+    return (this._calendars || []).find(c => c.id === id);
+  }
+
   _whoColor(who) {
-    if (who === "a")     return this._config.personA.color;
-    if (who === "b")     return this._config.personB.color;
-    if (who === "joint") return this._config.joint.color;
-    return "#888";
+    return this._calById(who)?.color || "#888";
   }
 
   _whoName(who) {
-    if (who === "a")     return this._config.personA.name;
-    if (who === "b")     return this._config.personB.name;
-    if (who === "joint") return `${this._config.personA.name} & ${this._config.personB.name}`;
-    return "Unknown";
+    return this._calById(who)?.name || "Unknown";
   }
 
   _filteredEvents() {
@@ -757,13 +805,6 @@ class CoupleCalendarPanel extends HTMLElement {
   }
 
   _renderLegend() {
-    const cfg    = this._config || {};
-    const aColor = cfg.personA?.color || "#818CF8";
-    const bColor = cfg.personB?.color || "#F472B6";
-    const jColor = cfg.joint?.color   || "#34D399";
-    const aName  = cfg.personA?.name  || "Partner 1";
-    const bName  = cfg.personB?.name  || "Partner 2";
-
     let lastStr = "";
     if (this._lastFetched) {
       const diff = Math.round((Date.now() - this._lastFetched) / 60000);
@@ -771,10 +812,8 @@ class CoupleCalendarPanel extends HTMLElement {
     }
 
     const filters = [
-      { id: "all",   label: "All",       color: null },
-      { id: "a",     label: aName,       color: aColor },
-      { id: "b",     label: bName,       color: bColor },
-      { id: "joint", label: "Together",  color: jColor },
+      { id: "all", label: "All", color: null },
+      ...(this._calendars || []).map(c => ({ id: c.id, label: c.name, color: c.color })),
     ];
 
     const el = this.shadowRoot.getElementById("cc-legend");
@@ -1066,11 +1105,43 @@ class CoupleCalendarPanel extends HTMLElement {
 
   _renderDrawer() {
     const cfg  = this._config || {};
-    const aColor = cfg.personA?.color || "#818CF8";
+    const aColor = (cfg.calendars?.[0]?.color) || cfg.personA?.color || "#818CF8";
     const bColor = cfg.personB?.color || "#F472B6";
     const jColor = cfg.joint?.color   || "#34D399";
     const el = this.shadowRoot.getElementById("cc-drawer");
     if (!el) return;
+
+    // Build available calendar entity options from hass.states
+    const availableEntities = Object.keys(this._hass?.states || {})
+      .filter(id => id.startsWith("calendar."))
+      .sort()
+      .map(id => ({ value: id, label: id.replace("calendar.", "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) }));
+
+    const entityOptions = availableEntities.map(e =>
+      `<option value="${e.value}">${e.label}</option>`
+    ).join("");
+
+    const calCards = (this._calendars || []).map((cal, i) => {
+      const selectedEntities = Array.isArray(cal.entities) ? cal.entities : (cal.entities ? [cal.entities] : []);
+      return `
+        <div class="cal-card" data-cal-id="${cal.id}">
+          <div class="cal-card-header">
+            <input type="text" class="cal-name-input" value="${cal.name}" placeholder="Calendar name">
+            ${(this._calendars.length > 1) ? `<button class="cal-delete-btn" data-cal-id="${cal.id}" aria-label="Remove">${ICON.close}</button>` : ""}
+          </div>
+          <div class="cal-card-color-label">Color</div>
+          <div class="color-swatch-row cal-colors" data-cal-id="${cal.id}">
+            ${COLOR_PRESETS.map(c => `<div class="color-swatch ${c===cal.color?"selected":""}" data-color="${c}" style="background:${c};"></div>`).join("")}
+          </div>
+          <div class="cal-card-color-label" style="margin-top:12px;">Google Calendar Entities</div>
+          <select class="cal-entity-select" data-cal-id="${cal.id}" multiple size="${Math.min(5, availableEntities.length || 3)}">
+            ${availableEntities.map(e => `<option value="${e.value}" ${selectedEntities.includes(e.value)?"selected":""}>${e.label}</option>`).join("")}
+          </select>
+        </div>
+      `;
+    }).join("");
+
+    const firstColor = (this._calendars?.[0]?.color) || "#818CF8";
 
     el.innerHTML = `
       <div class="drawer-header">
@@ -1079,28 +1150,11 @@ class CoupleCalendarPanel extends HTMLElement {
       </div>
       <div class="drawer-body">
         <div class="settings-section">
-          <div class="settings-section-title">Partner 1</div>
-          <div class="settings-row"><label>Name</label><input type="text" id="s-a-name" value="${cfg.personA?.name||"Partner 1"}"></div>
-          <div class="settings-section-title" style="font-size:11px;margin-bottom:8px;margin-top:4px;">Color</div>
-          <div class="color-swatch-row" id="s-a-colors">
-            ${COLOR_PRESETS.map(c => `<div class="color-swatch ${c===aColor?"selected":""}" data-color="${c}" style="background:${c};"></div>`).join("")}
-          </div>
+          <div class="settings-section-title">Calendars</div>
+          <div id="cal-cards-list">${calCards}</div>
+          <button class="add-cal-btn" id="cc-add-cal">+ Add Calendar</button>
         </div>
-        <div class="settings-section">
-          <div class="settings-section-title">Partner 2</div>
-          <div class="settings-row"><label>Name</label><input type="text" id="s-b-name" value="${cfg.personB?.name||"Partner 2"}"></div>
-          <div class="settings-section-title" style="font-size:11px;margin-bottom:8px;margin-top:4px;">Color</div>
-          <div class="color-swatch-row" id="s-b-colors">
-            ${COLOR_PRESETS.map(c => `<div class="color-swatch ${c===bColor?"selected":""}" data-color="${c}" style="background:${c};"></div>`).join("")}
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title">Together / Shared</div>
-          <div class="settings-section-title" style="font-size:11px;margin-bottom:8px;margin-top:4px;">Color</div>
-          <div class="color-swatch-row" id="s-j-colors">
-            ${COLOR_PRESETS.map(c => `<div class="color-swatch ${c===jColor?"selected":""}" data-color="${c}" style="background:${c};"></div>`).join("")}
-          </div>
-        </div>
+
         <div class="settings-section">
           <div class="settings-section-title">Display</div>
           <div class="settings-row">
@@ -1121,8 +1175,8 @@ class CoupleCalendarPanel extends HTMLElement {
           <div class="settings-row">
             <label>Week starts</label>
             <select id="s-fdow">
-              <option value="0"     ${(cfg.firstDayOfWeek==0||cfg.firstDayOfWeek=="0")     ?"selected":""}>Sunday</option>
-              <option value="1"     ${(cfg.firstDayOfWeek==1||cfg.firstDayOfWeek=="1")     ?"selected":""}>Monday</option>
+              <option value="0"     ${(cfg.firstDayOfWeek==0||cfg.firstDayOfWeek=="0")?"selected":""}>Sunday</option>
+              <option value="1"     ${(cfg.firstDayOfWeek==1||cfg.firstDayOfWeek=="1")?"selected":""}>Monday</option>
               <option value="today" ${cfg.firstDayOfWeek==="today"?"selected":""}>Today (rolling 7 days)</option>
             </select>
           </div>
@@ -1135,23 +1189,47 @@ class CoupleCalendarPanel extends HTMLElement {
             </select>
           </div>
         </div>
-        <button class="save-btn" id="cc-save-settings" style="background:${aColor};">Save Changes</button>
+
+        <button class="save-btn" id="cc-save-settings" style="background:${firstColor};">Save Changes</button>
       </div>
     `;
 
-    ["a","b","j"].forEach(who =>
-      el.querySelectorAll(`#s-${who}-colors .color-swatch`).forEach(sw =>
+    // Color swatch selection per calendar card
+    el.querySelectorAll(".cal-colors").forEach(row => {
+      row.querySelectorAll(".color-swatch").forEach(sw =>
         sw.addEventListener("click", () => {
-          el.querySelectorAll(`#s-${who}-colors .color-swatch`).forEach(s => s.classList.remove("selected"));
+          row.querySelectorAll(".color-swatch").forEach(s => s.classList.remove("selected"));
           sw.classList.add("selected");
         })
-      )
+      );
+    });
+
+    // Delete calendar
+    el.querySelectorAll(".cal-delete-btn").forEach(btn =>
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.calId;
+        this._calendars = this._calendars.filter(c => c.id !== id);
+        this._renderDrawer();
+      })
     );
+
+    // Add calendar
+    el.querySelector("#cc-add-cal").addEventListener("click", () => {
+      const colors = ["#818CF8","#F472B6","#34D399","#FBBF24","#60A5FA","#FB923C","#A78BFA","#34D399"];
+      const newId = `cal_${Date.now()}`;
+      const usedColors = (this._calendars || []).map(c => c.color);
+      const nextColor = colors.find(c => !usedColors.includes(c)) || colors[this._calendars.length % colors.length];
+      this._calendars = [...(this._calendars || []), { id: newId, name: "New Calendar", color: nextColor, entities: [] }];
+      this._renderDrawer();
+      // Scroll to bottom to show new card
+      setTimeout(() => el.querySelector(".drawer-body")?.scrollTo({ top: 99999, behavior: "smooth" }), 50);
+    });
+
     el.querySelector("#cc-drawer-close").addEventListener("click", () => this._closeDrawer());
     el.querySelector("#cc-save-settings").addEventListener("click", () => this._saveSettings());
   }
 
-  _openDrawer()  {
+  _openDrawer() {
     this._renderDrawer();
     this.shadowRoot.getElementById("cc-drawer-overlay").classList.add("open");
     this.shadowRoot.getElementById("cc-drawer").classList.add("open");
@@ -1161,22 +1239,46 @@ class CoupleCalendarPanel extends HTMLElement {
     this.shadowRoot.getElementById("cc-drawer").classList.remove("open");
   }
 
-  _saveSettings() {
+  async _saveSettings() {
     const dr = this.shadowRoot.getElementById("cc-drawer");
-    const patch = {
-      personAName:  dr.querySelector("#s-a-name")?.value || undefined,
-      personBName:  dr.querySelector("#s-b-name")?.value || undefined,
-      personAColor: dr.querySelector("#s-a-colors .selected")?.dataset.color || undefined,
-      personBColor: dr.querySelector("#s-b-colors .selected")?.dataset.color || undefined,
-      jointColor:   dr.querySelector("#s-j-colors .selected")?.dataset.color || undefined,
-      theme:        dr.querySelector("#s-theme")?.value || undefined,
-      timeFormat:   dr.querySelector("#s-time")?.value  || undefined,
-      firstDayOfWeek: dr.querySelector("#s-fdow")?.value ?? this._config?.firstDayOfWeek ?? 0,
-      defaultView:  dr.querySelector("#s-default-view")?.value || undefined,
+
+    // Collect updated calendars from the drawer
+    const updatedCals = (this._calendars || []).map(cal => {
+      const card   = dr.querySelector(`.cal-card[data-cal-id="${cal.id}"]`);
+      if (!card) return cal;
+      const name   = card.querySelector(".cal-name-input")?.value?.trim() || cal.name;
+      const color  = card.querySelector(".cal-colors .selected")?.dataset.color || cal.color;
+      const select = card.querySelector(".cal-entity-select");
+      const entities = select
+        ? Array.from(select.selectedOptions).map(o => o.value)
+        : cal.entities;
+      return { ...cal, name, color, entities };
+    });
+
+    // Display preferences stay in localStorage
+    const displayPatch = {
+      theme:          dr.querySelector("#s-theme")?.value,
+      timeFormat:     dr.querySelector("#s-time")?.value,
+      firstDayOfWeek: dr.querySelector("#s-fdow")?.value ?? 0,
+      defaultView:    dr.querySelector("#s-default-view")?.value,
     };
-    this._saveLocalSettings(patch);
+
+    // Save calendars: try WebSocket (persists to HA), fall back to localStorage
+    try {
+      await this._hass.callWS({ type: "couple_calendar/update_calendars", calendars: updatedCals });
+      // WebSocket saved — clear any localStorage calendar override so HA config is authoritative
+      const ls = this._loadLocalSettings();
+      delete ls.calendars;
+      localStorage.setItem("couple_calendar_settings", JSON.stringify({ ...ls, ...displayPatch }));
+    } catch (e) {
+      // WebSocket failed — save to localStorage as fallback
+      this._saveLocalSettings({ ...displayPatch, calendars: updatedCals });
+    }
+
+    this._calendars = updatedCals;
+    this._saveLocalSettings(displayPatch);
     this._closeDrawer();
-    this._applyConfig();   // re-reads local settings and re-renders
+    this._applyConfig();
   }
 
   // ── Event detail modal ────────────────────────────────────────────────
