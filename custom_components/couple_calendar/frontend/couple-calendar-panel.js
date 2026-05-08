@@ -919,7 +919,7 @@ class CoupleCalendarPanel extends HTMLElement {
     this._renderHeader();
     this._renderLegend();
     this._renderMainContent();
-    this._renderSidebar();
+    this._renderSidebar().catch(() => {});
     this._renderDrawer();
   }
 
@@ -1391,12 +1391,13 @@ class CoupleCalendarPanel extends HTMLElement {
         ph.style.cssText = "padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.04);color:#8B949E;font-size:12px;";
         ph.textContent = `Loading ${type}…`;
         el.appendChild(ph);
-        // Both whenDefined AND timed retries — whichever fires first wins
-        customElements.whenDefined(elementName)
-          .then(() => { if (this._config?.kioskMode) this._renderSidebar(); });
+        // Retry at intervals — _renderSidebar re-runs once the element registers
         [500, 1500, 3500].forEach(d =>
-          setTimeout(() => { if (this._config?.kioskMode && !customElements.get(regName || elementName)) return;
-            if (this._config?.kioskMode) this._renderSidebar(); }, d)
+          setTimeout(() => {
+            if (this._config?.kioskMode && customElements.get(elementName)) {
+              this._renderSidebar().catch(() => {});
+            }
+          }, d)
         );
         continue;
       }
@@ -1793,32 +1794,28 @@ class CoupleCalendarPanel extends HTMLElement {
     if (!this._hass) return;
     try {
       const resources = await this._hass.callWS({ type: "lovelace/resources" });
+      // Use <script> tags for everything — avoids import() AbortError when
+      // HA's router transitions while a dynamic import is in-flight.
       await Promise.all((resources || []).map(res => {
         if (!res.url) return Promise.resolve();
         const bareUrl = res.url.split("?")[0];
-        if (res.type === "module") {
-          return import(res.url).catch(() => {});
-        }
-        // Script already in page? Skip.
         if (document.querySelector(`script[src^="${bareUrl}"]`)) return Promise.resolve();
         return new Promise(resolve => {
           const s = document.createElement("script");
-          s.src = res.url; s.onload = resolve; s.onerror = resolve;
+          if (res.type === "module") s.type = "module";
+          s.src = res.url;
+          s.onload = resolve;
+          s.onerror = resolve; // resolve even on error — don't block other cards
           document.head.appendChild(s);
         });
       }));
-      // Short settle so scripts finish executing and calling customElements.define()
-      await new Promise(r => setTimeout(r, 300));
     } catch (e) {
       console.warn("[FamilyCalendar] Could not load Lovelace resources:", e);
     }
-    // Render now, then retry with delays to catch any late-registering elements
-    if (this._config?.kioskMode) {
-      this._renderSidebar();
-      [800, 2000, 4000].forEach(delay =>
-        setTimeout(() => { if (this._config?.kioskMode) this._renderSidebar(); }, delay)
-      );
-    }
+    // Render at 300ms, 1s, 2.5s — catches elements that register late
+    [300, 1000, 2500].forEach(delay =>
+      setTimeout(() => { if (this._config?.kioskMode) this._renderSidebar().catch(() => {}); }, delay)
+    );
   }
 
   // Lazy-load js-yaml from jsDelivr (cached globally after first load).
