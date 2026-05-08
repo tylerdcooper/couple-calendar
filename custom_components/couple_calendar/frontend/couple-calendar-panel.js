@@ -1395,7 +1395,9 @@ class CoupleCalendarPanel extends HTMLElement {
         console.warn("[FamilyCalendar] Could not create card:", e);
       }
       if (cardEl) {
-        if (typeof cardEl.setConfig === "function") {
+        // createCardElement already called setConfig internally — don't call it again.
+        // Only call setConfig for the fallback path where we created the element manually.
+        if (!helpers?.createCardElement && typeof cardEl.setConfig === "function") {
           try { cardEl.setConfig(cardConfig); } catch (_) {}
         }
         cardEl.hass = this._hass;
