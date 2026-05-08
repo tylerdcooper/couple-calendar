@@ -1553,16 +1553,15 @@ class CoupleCalendarPanel extends HTMLElement {
             </div>
             <button class="add-cal-btn" id="s-add-badge" style="margin-bottom:16px;">+ Add Badge Entity</button>
 
-            <div class="settings-section-title" style="font-size:10px;">SIDEBAR CARDS <span style="font-weight:400;font-style:italic;opacity:0.7">— any Lovelace card type</span></div>
+            <div class="settings-section-title" style="font-size:10px;">SIDEBAR CARDS <span style="font-weight:400;font-style:italic;opacity:0.7">— paste YAML directly from your dashboard card editor</span></div>
             <div id="s-cards-list">
               ${(cfg.sidebarCards||[]).map((card,i) => `
                 <div class="cal-card" data-card-idx="${i}" style="margin-bottom:10px;">
-                  <div class="cal-card-header">
-                    <input type="text" class="cal-name-input card-type-input" value="${card.type||""}" placeholder="Card type (e.g. weather-forecast)">
+                  <div class="cal-card-header" style="margin-bottom:6px;">
+                    <span style="font-size:12px;font-weight:700;opacity:0.6;">${card.type||"card"}</span>
                     <button class="cal-delete-btn" data-card-idx="${i}">${ICON.close}</button>
                   </div>
-                  <div class="cal-card-color-label" style="margin-top:8px;">Config JSON (optional extra options)</div>
-                  <textarea class="card-config-input" rows="3" style="width:100%;margin-top:6px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.05);color:inherit;font-size:12px;font-family:monospace;resize:vertical;">${JSON.stringify(card, null, 2)}</textarea>
+                  <textarea class="card-config-input" rows="5" style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.05);color:inherit;font-size:12px;font-family:monospace;resize:vertical;" placeholder="type: weather-forecast&#10;entity: weather.home">${this._cardToYaml(card)}</textarea>
                 </div>`).join("")}
             </div>
             <button class="add-cal-btn" id="s-add-card">+ Add Sidebar Card</button>
@@ -1606,12 +1605,11 @@ class CoupleCalendarPanel extends HTMLElement {
       div.dataset.cardIdx = idx;
       div.style.marginBottom = "10px";
       div.innerHTML = `
-        <div class="cal-card-header">
-          <input type="text" class="cal-name-input card-type-input" placeholder="Card type (e.g. weather-forecast)">
+        <div class="cal-card-header" style="margin-bottom:6px;">
+          <span style="font-size:12px;font-weight:700;opacity:0.6;">new card</span>
           <button class="cal-delete-btn">${ICON.close}</button>
         </div>
-        <div class="cal-card-color-label" style="margin-top:8px;">Config JSON</div>
-        <textarea class="card-config-input" rows="3" style="width:100%;margin-top:6px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.05);color:inherit;font-size:12px;font-family:monospace;resize:vertical;">{\n  "type": ""\n}</textarea>`;
+        <textarea class="card-config-input" rows="5" style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.05);color:inherit;font-size:12px;font-family:monospace;resize:vertical;" placeholder="type: weather-forecast&#10;entity: weather.home"></textarea>`;
       list.appendChild(div);
       div.querySelector(".cal-delete-btn").addEventListener("click", () => div.remove());
     });
@@ -1684,15 +1682,17 @@ class CoupleCalendarPanel extends HTMLElement {
     const kioskMode = dr.querySelector("#s-kiosk")?.checked ?? false;
     const headerBadges = Array.from(dr.querySelectorAll(".badge-entity-input"))
       .map(i => i.value.trim()).filter(Boolean);
+    const yaml = await this._loadYaml();
     const sidebarCards = Array.from(dr.querySelectorAll(".cal-card[data-card-idx]"))
       .map(card => {
-        const typeInput = card.querySelector(".card-type-input")?.value?.trim();
-        const jsonInput = card.querySelector(".card-config-input")?.value?.trim();
+        const text = card.querySelector(".card-config-input")?.value?.trim();
+        if (!text) return null;
         try {
-          const parsed = jsonInput ? JSON.parse(jsonInput) : {};
-          return typeInput ? { type: typeInput, ...parsed } : parsed.type ? parsed : null;
-        } catch (_) {
-          return typeInput ? { type: typeInput } : null;
+          const parsed = yaml ? yaml.load(text) : JSON.parse(text);
+          return (parsed && typeof parsed === "object" && parsed.type) ? parsed : null;
+        } catch (e) {
+          console.warn("[FamilyCalendar] Could not parse card config:", e.message);
+          return null;
         }
       }).filter(Boolean);
 
@@ -1768,6 +1768,46 @@ class CoupleCalendarPanel extends HTMLElement {
     this.shadowRoot.getElementById("cc-modal-overlay")?.classList.remove("open");
     this.shadowRoot.getElementById("cc-modal")?.classList.remove("open");
     setTimeout(() => { const m = this.shadowRoot.getElementById("cc-modal"); if (m) m.innerHTML = ""; }, 300);
+  }
+
+  // ── YAML helpers ─────────────────────────────────────────────────────
+
+  // Lazy-load js-yaml from jsDelivr (cached globally after first load).
+  // Falls back gracefully if offline.
+  async _loadYaml() {
+    if (window.__fcYaml) return window.__fcYaml;
+    try {
+      const mod = await import("https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.mjs");
+      window.__fcYaml = mod.default || mod;
+      return window.__fcYaml;
+    } catch (_) {
+      return null; // offline — _saveSettings falls back to JSON.parse
+    }
+  }
+
+  // Convert a card config object back to YAML for display in the textarea.
+  // Simple custom serialiser so we don't need js-yaml just to open the drawer.
+  _cardToYaml(obj, indent = 0) {
+    if (!obj || typeof obj !== "object") return String(obj ?? "");
+    const pad = "  ".repeat(indent);
+    return Object.entries(obj).map(([k, v]) => {
+      if (v === null || v === undefined) return `${pad}${k}:`;
+      if (Array.isArray(v)) {
+        const items = v.map(item =>
+          typeof item === "object"
+            ? `${pad}  -\n${this._cardToYaml(item, indent + 2)}`
+            : `${pad}  - ${item}`
+        ).join("\n");
+        return `${pad}${k}:\n${items}`;
+      }
+      if (typeof v === "object") {
+        return `${pad}${k}:\n${this._cardToYaml(v, indent + 1)}`;
+      }
+      // Quote strings that contain special YAML chars, leave others bare
+      const safe = /^[a-zA-Z0-9._\-/: ]+$/.test(String(v));
+      const val  = safe ? v : `"${String(v).replace(/"/g, '\\"')}"`;
+      return `${pad}${k}: ${val}`;
+    }).join("\n");
   }
 
   // ── Swipe ─────────────────────────────────────────────────────────────
