@@ -1386,14 +1386,18 @@ class CoupleCalendarPanel extends HTMLElement {
                         : (customElements.get(elementName) ? elementName : null);
 
       if (!regName) {
-        // Not registered yet — show placeholder and auto-retry on define
+        // Not registered yet — show placeholder and schedule retries
         const ph = document.createElement("div");
         ph.style.cssText = "padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.04);color:#8B949E;font-size:12px;";
         ph.textContent = `Loading ${type}…`;
         el.appendChild(ph);
+        // Both whenDefined AND timed retries — whichever fires first wins
         customElements.whenDefined(elementName)
-          .then(() => { if (this._config?.kioskMode) this._renderSidebar(); })
-          .catch(() => { ph.textContent = `"${type}" not found. Is it installed?`; });
+          .then(() => { if (this._config?.kioskMode) this._renderSidebar(); });
+        [500, 1500, 3500].forEach(d =>
+          setTimeout(() => { if (this._config?.kioskMode && !customElements.get(regName || elementName)) return;
+            if (this._config?.kioskMode) this._renderSidebar(); }, d)
+        );
         continue;
       }
 
@@ -1808,7 +1812,13 @@ class CoupleCalendarPanel extends HTMLElement {
     } catch (e) {
       console.warn("[FamilyCalendar] Could not load Lovelace resources:", e);
     }
-    if (this._config?.kioskMode) this._renderSidebar();
+    // Render now, then retry with delays to catch any late-registering elements
+    if (this._config?.kioskMode) {
+      this._renderSidebar();
+      [800, 2000, 4000].forEach(delay =>
+        setTimeout(() => { if (this._config?.kioskMode) this._renderSidebar(); }, delay)
+      );
+    }
   }
 
   // Lazy-load js-yaml from jsDelivr (cached globally after first load).
