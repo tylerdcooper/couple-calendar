@@ -75,7 +75,7 @@ function buildStyles(cfg) {
   return `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   :host, .panel-root {
-    display: flex; flex-direction: column; height: 100%; width: 100%;
+    display: flex; flex-direction: row; height: 100%; width: 100%;
     font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
     background: ${p.bg}; color: ${p.text}; overflow: hidden;
     user-select: none; -webkit-user-select: none;
@@ -162,11 +162,11 @@ function buildStyles(cfg) {
     font-size: 12px; color: ${p.textMuted}; white-space: nowrap;
   }
 
-  /* ── Main content area ── */
-  .panel-content { display: flex; flex: 1; overflow: hidden; }
+  /* ── Right column (everything except the sidebar) ── */
+  .panel-right { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
   .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; position: relative; }
 
-  /* ── Kiosk sidebar ── */
+  /* ── Kiosk sidebar — full height, sits to the left of everything ── */
   .kiosk-sidebar {
     width: 0; flex-shrink: 0; overflow: hidden;
     display: flex; flex-direction: column; gap: 12px;
@@ -896,11 +896,11 @@ class CoupleCalendarPanel extends HTMLElement {
     const root = document.createElement("div");
     root.className = `panel-root${this._config?.kioskMode ? " kiosk-mode" : ""}`;
     root.innerHTML = `
-      <div class="header"         id="cc-header"></div>
-      <div class="legend"         id="cc-legend"></div>
-      <div class="panel-content">
-        <div class="kiosk-sidebar" id="cc-sidebar"></div>
-        <div class="main"          id="cc-main"></div>
+      <div class="kiosk-sidebar"  id="cc-sidebar"></div>
+      <div class="panel-right">
+        <div class="header"       id="cc-header"></div>
+        <div class="legend"       id="cc-legend"></div>
+        <div class="main"         id="cc-main"></div>
       </div>
       <div class="drawer-overlay" id="cc-drawer-overlay"></div>
       <div class="drawer"         id="cc-drawer"></div>
@@ -1387,19 +1387,21 @@ class CoupleCalendarPanel extends HTMLElement {
     const type = config.type;
     if (!type) return null;
 
-    // HA built-in cards use the hui-{type}-card naming convention
-    const builtinName = `hui-${type}-card`;
-    let el = null;
+    // HA YAML uses "custom:my-card" but the registered element name is just "my-card"
+    const isCustom   = type.startsWith("custom:");
+    const elementName = isCustom ? type.slice(7) : type;
+    // Built-in HA cards are registered as hui-{type}-card
+    const builtinName = isCustom ? null : `hui-${type}-card`;
 
-    if (customElements.get(builtinName)) {
+    let el = null;
+    if (builtinName && customElements.get(builtinName)) {
       el = document.createElement(builtinName);
-    } else if (customElements.get(type)) {
-      el = document.createElement(type);
+    } else if (customElements.get(elementName)) {
+      el = document.createElement(elementName);
     } else {
-      // Card type not yet registered — may load later
       const placeholder = document.createElement("div");
       placeholder.style.cssText = "padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.05);color:#8B949E;font-size:12px;";
-      placeholder.textContent = `Card "${type}" not found. Make sure it's installed.`;
+      placeholder.textContent = `Card "${type}" not found. Is it installed in HACS and loaded?`;
       return placeholder;
     }
 
