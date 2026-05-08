@@ -1367,6 +1367,10 @@ class CoupleCalendarPanel extends HTMLElement {
 
     if (!this._config?.kioskMode) return;
 
+    // Ensure all Lovelace resources (HACS card scripts) are loaded before
+    // attempting to create any card elements.
+    await this._loadLovelaceResources();
+
     const cards = this._config.sidebarCards || [];
     if (!cards.length) {
       el.innerHTML = `<div style="padding:16px;color:#8B949E;font-size:13px;text-align:center;line-height:1.6;">
@@ -1836,34 +1840,43 @@ class CoupleCalendarPanel extends HTMLElement {
   // Load all Lovelace resources (HACS cards etc.) so custom elements are
   // available in our panel. HA only loads these when a Lovelace dashboard
   // opens, so we need to do it ourselves. Runs once per session.
-  async _loadLovelaceResources() {
-    if (window.__fcResourcesLoaded) return;
-    window.__fcResourcesLoaded = true;
+  _loadLovelaceResources() {
+    // Return a single shared Promise so every caller awaits the same load.
+    // Once resolved, subsequent calls return the already-resolved Promise.
+    if (window.__fcResourcesPromise) return window.__fcResourcesPromise;
+    window.__fcResourcesPromise = this._doLoadLovelaceResources();
+    return window.__fcResourcesPromise;
+  }
+
+  async _doLoadLovelaceResources() {
     if (!this._hass) return;
     try {
       const resources = await this._hass.callWS({ type: "lovelace/resources" });
-      // Use <script> tags for everything — avoids import() AbortError when
-      // HA's router transitions while a dynamic import is in-flight.
-      await Promise.all((resources || []).map(res => {
-        if (!res.url) return Promise.resolve();
-        const bareUrl = res.url.split("?")[0];
-        if (document.querySelector(`script[src^="${bareUrl}"]`)) return Promise.resolve();
-        return new Promise(resolve => {
-          const s = document.createElement("script");
-          if (res.type === "module") s.type = "module";
-          s.src = res.url;
-          s.onload = resolve;
-          s.onerror = resolve; // resolve even on error — don't block other cards
-          document.head.appendChild(s);
-        });
+      await Promise.all((resources || []).map(async res => {
+        if (!res.url) return;
+        try {
+          if (res.type === "module") {
+            // import() is what HA's own Lovelace uses — respects importmaps etc.
+            await import(res.url);
+          } else {
+            const bareUrl = res.url.split("?")[0];
+            if (document.querySelector(`script[src^="${bareUrl}"]`)) return;
+            await new Promise(resolve => {
+              const s = document.createElement("script");
+              s.src = res.url; s.onload = resolve; s.onerror = resolve;
+              document.head.appendChild(s);
+            });
+          }
+        } catch (e) {
+          if (e?.name !== "AbortError") {
+            console.warn("[FamilyCalendar] Resource load issue:", res.url, e?.message);
+          }
+          // AbortError (HA router navigation) or other errors — don't block
+        }
       }));
     } catch (e) {
-      console.warn("[FamilyCalendar] Could not load Lovelace resources:", e);
+      console.warn("[FamilyCalendar] Could not fetch Lovelace resources:", e);
     }
-    // Render at 300ms, 1s, 2.5s — catches elements that register late
-    [300, 1000, 2500].forEach(delay =>
-      setTimeout(() => { if (this._config?.kioskMode) this._renderSidebar().catch(() => {}); }, delay)
-    );
   }
 
   // Lazy-load js-yaml from jsDelivr (cached globally after first load).
