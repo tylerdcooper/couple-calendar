@@ -1880,16 +1880,25 @@ class CoupleCalendarPanel extends HTMLElement {
 
     console.log("[FamilyCalendar] Loading", allResources.length, "Lovelace resources");
 
+    // Normalize URLs the same way HA's load-resources.ts does — absolute
+    // against the HA server origin so they work behind proxies / Nabu Casa.
+    const hassUrl = this._hass.auth?.data?.hassUrl || "";
+
     await Promise.all(allResources.map(res => {
-      const bareUrl = res.url.split("?")[0];
+      // Resolve to absolute URL (no-op for already-absolute URLs)
+      const absUrl = hassUrl ? new URL(res.url, hassUrl).toString() : res.url;
+      const bareUrl = absUrl.split("?")[0];
+      // Check body AND head for an existing tag (HA appends to body)
       if (document.querySelector(`script[src^="${bareUrl}"]`)) return Promise.resolve();
       return new Promise(resolve => {
         const s = document.createElement("script");
-        s.src = res.url;
+        s.src = absUrl;
+        // HA's loadModule uses type="module"; loadJS uses no type
         if (res.type === "module") s.type = "module";
         s.onload = resolve;
-        s.onerror = () => { console.warn("[FamilyCalendar] Resource failed:", res.url); resolve(); };
-        document.head.appendChild(s);
+        s.onerror = () => { console.warn("[FamilyCalendar] Resource failed:", absUrl); resolve(); };
+        // HA appends to document.body (not head) — match the exact pattern
+        document.body.appendChild(s);
       });
     }));
   }
