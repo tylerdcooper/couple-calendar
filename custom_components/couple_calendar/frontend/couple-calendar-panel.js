@@ -643,6 +643,7 @@ class CoupleCalendarPanel extends HTMLElement {
 
     this._view = this._config.defaultView;
     this._render();
+    this._loadLovelaceResources(); // load HACS card scripts so sidebar cards work
     this._fetchEvents().then(() => {
       if (this._view === "month") this._prefetchFullMonthRange();
     });
@@ -1629,13 +1630,19 @@ class CoupleCalendarPanel extends HTMLElement {
       );
     });
 
-    // Delete calendar
-    el.querySelectorAll(".cal-delete-btn").forEach(btn =>
+    // Delete calendar — only bind to buttons that have data-cal-id so sidebar
+    // card and badge delete buttons are not accidentally caught by this handler
+    el.querySelectorAll(".cal-delete-btn[data-cal-id]").forEach(btn =>
       btn.addEventListener("click", () => {
         const id = btn.dataset.calId;
         this._calendars = this._calendars.filter(c => c.id !== id);
         this._renderDrawer();
       })
+    );
+
+    // Delete sidebar card (data-card-idx on the button itself)
+    el.querySelectorAll(".cal-card[data-card-idx] .cal-delete-btn").forEach(btn =>
+      btn.addEventListener("click", () => btn.closest(".cal-card")?.remove())
     );
 
     // Add calendar
@@ -1773,6 +1780,36 @@ class CoupleCalendarPanel extends HTMLElement {
   }
 
   // ── YAML helpers ─────────────────────────────────────────────────────
+
+  // Load all Lovelace resources (HACS cards etc.) so custom elements are
+  // available in our panel. HA only loads these when a Lovelace dashboard
+  // opens, so we need to do it ourselves. Runs once per session.
+  async _loadLovelaceResources() {
+    if (window.__fcResourcesLoaded) return;
+    window.__fcResourcesLoaded = true;
+    if (!this._hass) return;
+    try {
+      const resources = await this._hass.callWS({ type: "lovelace/resources" });
+      await Promise.all((resources || []).map(async res => {
+        if (!res.url) return;
+        const url = res.url.split("?")[0]; // strip cache-bust query
+        if (res.type === "module") {
+          await import(res.url).catch(() => {});
+        } else {
+          if (document.querySelector(`script[src="${url}"]`)) return;
+          await new Promise(resolve => {
+            const s = document.createElement("script");
+            s.src = res.url; s.onload = resolve; s.onerror = resolve;
+            document.head.appendChild(s);
+          });
+        }
+      }));
+    } catch (e) {
+      console.warn("[FamilyCalendar] Could not load Lovelace resources:", e);
+    }
+    // Re-render sidebar now that card elements are registered
+    if (this._config?.kioskMode) this._renderSidebar();
+  }
 
   // Lazy-load js-yaml from jsDelivr (cached globally after first load).
   // Falls back gracefully if offline.
