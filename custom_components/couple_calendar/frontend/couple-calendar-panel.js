@@ -1395,14 +1395,22 @@ class CoupleCalendarPanel extends HTMLElement {
     const builtinName = isCustom ? null : `hui-${type}-card`;
 
     let el = null;
-    if (builtinName && customElements.get(builtinName)) {
-      el = document.createElement(builtinName);
-    } else if (customElements.get(elementName)) {
-      el = document.createElement(elementName);
+    const registeredName = (builtinName && customElements.get(builtinName)) ? builtinName
+                         : (customElements.get(elementName) ? elementName : null);
+
+    if (registeredName) {
+      el = document.createElement(registeredName);
     } else {
+      // Element not registered yet — show a brief loading placeholder and
+      // re-render the sidebar automatically once it becomes defined.
       const placeholder = document.createElement("div");
       placeholder.style.cssText = "padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.05);color:#8B949E;font-size:12px;";
-      placeholder.textContent = `Card "${type}" not found. Is it installed in HACS and loaded?`;
+      placeholder.textContent = `Loading ${type}…`;
+      customElements.whenDefined(elementName)
+        .then(() => { if (this._config?.kioskMode) this._renderSidebar(); })
+        .catch(() => {
+          placeholder.textContent = `Card "${type}" not found. Is it installed in HACS?`;
+        });
       return placeholder;
     }
 
@@ -1790,24 +1798,25 @@ class CoupleCalendarPanel extends HTMLElement {
     if (!this._hass) return;
     try {
       const resources = await this._hass.callWS({ type: "lovelace/resources" });
-      await Promise.all((resources || []).map(async res => {
-        if (!res.url) return;
-        const url = res.url.split("?")[0]; // strip cache-bust query
+      await Promise.all((resources || []).map(res => {
+        if (!res.url) return Promise.resolve();
+        const bareUrl = res.url.split("?")[0];
         if (res.type === "module") {
-          await import(res.url).catch(() => {});
-        } else {
-          if (document.querySelector(`script[src="${url}"]`)) return;
-          await new Promise(resolve => {
-            const s = document.createElement("script");
-            s.src = res.url; s.onload = resolve; s.onerror = resolve;
-            document.head.appendChild(s);
-          });
+          return import(res.url).catch(() => {});
         }
+        // Script already in page? Skip.
+        if (document.querySelector(`script[src^="${bareUrl}"]`)) return Promise.resolve();
+        return new Promise(resolve => {
+          const s = document.createElement("script");
+          s.src = res.url; s.onload = resolve; s.onerror = resolve;
+          document.head.appendChild(s);
+        });
       }));
+      // Short settle so scripts finish executing and calling customElements.define()
+      await new Promise(r => setTimeout(r, 300));
     } catch (e) {
       console.warn("[FamilyCalendar] Could not load Lovelace resources:", e);
     }
-    // Re-render sidebar now that card elements are registered
     if (this._config?.kioskMode) this._renderSidebar();
   }
 
