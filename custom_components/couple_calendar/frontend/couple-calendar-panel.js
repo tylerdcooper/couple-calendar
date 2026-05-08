@@ -610,14 +610,13 @@ class CoupleCalendarPanel extends HTMLElement {
       timeFormat:     ls.timeFormat  || pc.timeFormat  || "12h",
       defaultView:    ls.defaultView || pc.defaultView || "month",
       theme:          ls.theme       || pc.theme       || "dark",
-      // Kiosk mode — stored in HA config entry so all devices share the same setup
-      kioskMode:      pc.kioskMode    ?? ls.kioskMode    ?? false,
-      headerBadges:   pc.headerBadges ?? ls.headerBadges ?? [],
-      sidebarCards:   pc.sidebarCards ?? ls.sidebarCards ?? [],
+      // Kiosk: localStorage (most recent save on this device) → HA config → default
+      kioskMode:    ls.kioskMode    !== undefined ? ls.kioskMode    : (pc.kioskMode    ?? false),
+      headerBadges: ls.headerBadges !== undefined ? ls.headerBadges : (pc.headerBadges ?? []),
+      sidebarCards: ls.sidebarCards !== undefined ? ls.sidebarCards : (pc.sidebarCards ?? []),
     };
 
-    // Calendars: localStorage overrides HA config (allows in-app add/remove)
-    // Also handles migration from v1 personA/personB/joint format.
+    // Calendars: localStorage (most recent save) → HA panelConfig → migrate v1
     if (ls.calendars && ls.calendars.length > 0) {
       this._calendars = ls.calendars;
     } else if (pc.calendars && pc.calendars.length > 0) {
@@ -1578,10 +1577,14 @@ class CoupleCalendarPanel extends HTMLElement {
 
             <div class="settings-section-title" style="font-size:10px;">SIDEBAR CARDS <span style="font-weight:400;font-style:italic;opacity:0.7">— paste YAML directly from your dashboard card editor</span></div>
             <div id="s-cards-list">
-              ${(cfg.sidebarCards||[]).map((card,i) => `
+              ${(cfg.sidebarCards||[]).map((card,i,arr) => `
                 <div class="cal-card" data-card-idx="${i}" style="margin-bottom:10px;">
                   <div class="cal-card-header" style="margin-bottom:6px;">
-                    <span style="font-size:12px;font-weight:700;opacity:0.6;">${card.type||"card"}</span>
+                    <div style="display:flex;flex-direction:column;gap:2px;margin-right:6px;">
+                      <button class="card-move-btn" data-card-idx="${i}" data-dir="-1" ${i===0?"disabled":""} style="background:none;border:none;cursor:pointer;color:#8B949E;padding:0;line-height:1;font-size:14px;">▲</button>
+                      <button class="card-move-btn" data-card-idx="${i}" data-dir="1"  ${i===arr.length-1?"disabled":""} style="background:none;border:none;cursor:pointer;color:#8B949E;padding:0;line-height:1;font-size:14px;">▼</button>
+                    </div>
+                    <span style="font-size:12px;font-weight:700;opacity:0.6;flex:1;">${card.type||"card"}</span>
                     <button class="cal-delete-btn" data-card-idx="${i}">${ICON.close}</button>
                   </div>
                   <textarea class="card-config-input" rows="5" style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.05);color:inherit;font-size:12px;font-family:monospace;resize:vertical;" placeholder="type: weather-forecast&#10;entity: weather.home">${this._cardToYaml(card)}</textarea>
@@ -1638,6 +1641,31 @@ class CoupleCalendarPanel extends HTMLElement {
     });
     el.querySelectorAll("[data-card-idx] .cal-delete-btn").forEach(btn =>
       btn.addEventListener("click", () => btn.closest(".cal-card")?.remove())
+    );
+
+    // Move sidebar card up/down — rebuild the live card list order
+    el.querySelectorAll(".card-move-btn").forEach(btn =>
+      btn.addEventListener("click", () => {
+        if (btn.disabled) return;
+        const list = el.querySelector("#s-cards-list");
+        const card = btn.closest(".cal-card");
+        const dir  = parseInt(btn.dataset.dir);
+        if (!list || !card) return;
+        const cards = Array.from(list.querySelectorAll(".cal-card"));
+        const idx   = cards.indexOf(card);
+        const swapWith = cards[idx + dir];
+        if (!swapWith) return;
+        if (dir === -1) list.insertBefore(card, swapWith);
+        else            list.insertBefore(swapWith, card);
+        // Re-number data-card-idx and update disabled states
+        Array.from(list.querySelectorAll(".cal-card")).forEach((c, i, arr) => {
+          c.dataset.cardIdx = i;
+          c.querySelectorAll(".card-move-btn").forEach(b => {
+            b.disabled = (b.dataset.dir === "-1" && i === 0) ||
+                         (b.dataset.dir === "1"  && i === arr.length - 1);
+          });
+        });
+      })
     );
 
     // Color swatch selection per calendar card
@@ -1726,7 +1754,6 @@ class CoupleCalendarPanel extends HTMLElement {
       }).filter(Boolean);
 
     const allSettings = {
-      // All settings go to HA — synced across every device
       theme:          dr.querySelector("#s-theme")?.value          || "dark",
       timeFormat:     dr.querySelector("#s-time")?.value           || "12h",
       firstDayOfWeek: dr.querySelector("#s-fdow")?.value          ?? 0,
@@ -1734,22 +1761,23 @@ class CoupleCalendarPanel extends HTMLElement {
       kioskMode,
       headerBadges,
       sidebarCards,
+      calendars:      updatedCals,
     };
 
-    // Save everything to HA config entry (persists across all devices)
+    // Always save to localStorage first as an immediate backup
+    this._saveLocalSettings(allSettings);
+
+    // Also save to HA config entry so OTHER devices pick it up on load
     try {
       await this._hass.callWS({
         type: "couple_calendar/update_settings",
-        settings: { ...allSettings, [CONF_CALENDARS ?? "calendars"]: updatedCals },
+        settings: allSettings,
       });
-      // HA is now authoritative — clear any stale localStorage overrides
-      localStorage.removeItem("couple_calendar_settings");
     } catch (e) {
-      // WebSocket failed — fall back to localStorage so changes aren't lost
-      this._saveLocalSettings({ ...allSettings, calendars: updatedCals });
+      console.warn("[FamilyCalendar] Could not save to HA, settings are in localStorage:", e);
     }
 
-    // Update local state immediately without waiting for HA reload
+    // Update local state immediately
     this._calendars = updatedCals;
     if (this._config) Object.assign(this._config, allSettings);
     this._closeDrawer();
