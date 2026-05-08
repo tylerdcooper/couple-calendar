@@ -1858,53 +1858,40 @@ class CoupleCalendarPanel extends HTMLElement {
   async _doLoadLovelaceResources() {
     if (!this._hass) return;
 
-    // Step 1: load via lovelace/resources WS + script tags
-    try {
-      const resources = await this._hass.callWS({ type: "lovelace/resources" });
-      await Promise.all((resources || []).map(res => {
-        if (!res.url) return Promise.resolve();
-        const bareUrl = res.url.split("?")[0];
-        if (document.querySelector(`script[src^="${bareUrl}"]`)) return Promise.resolve();
-        return new Promise(resolve => {
-          const s = document.createElement("script");
-          s.src = res.url;
-          if (res.type === "module") s.type = "module";
-          s.onload = resolve;
-          s.onerror = () => { console.warn("[FamilyCalendar] Resource failed:", res.url); resolve(); };
-          document.head.appendChild(s);
-        });
-      }));
-    } catch (e) {
-      console.warn("[FamilyCalendar] Could not fetch Lovelace resources:", e);
-    }
+    // Fetch resources from both sources in parallel:
+    //  - lovelace/resources  → global resource list (UI-mode HACS registrations)
+    //  - lovelace/config     → dashboard-level resources (YAML-mode / per-dashboard)
+    // Many setups (especially YAML-mode Lovelace) only have resources in the
+    // config, not in the global list, which is why lovelace/resources alone fails.
+    const [globalResources, lovelaceConfig] = await Promise.all([
+      this._hass.callWS({ type: "lovelace/resources" }).catch(() => []),
+      this._hass.callWS({ type: "lovelace/config" }).catch(() => ({})),
+    ]);
 
-    // Step 2: check whether any sidebar custom elements are still missing
-    if (window.__fcLovelacePreloaded) return; // already did the Lovelace navigation this session
-    const missingElements = (this._config?.sidebarCards || [])
-      .filter(c => c.type?.startsWith("custom:"))
-      .map(c => c.type.slice(7))
-      .filter(name => !customElements.get(name));
-    if (missingElements.length === 0) return;
-
-    // Step 3: script tags didn't register everything — briefly navigate to
-    // the main Lovelace dashboard so HA's own resource loading fires, then
-    // auto-return. This is a one-per-session fallback.
-    console.log("[FamilyCalendar] Custom elements still missing:", missingElements, "— navigating to Lovelace to preload");
-    window.__fcLovelacePreloaded = true;
-    const returnPath = window.location.pathname;
-
-    await new Promise(resolve => {
-      history.pushState(null, "", "/lovelace/0");
-      window.dispatchEvent(new CustomEvent("location-changed", { bubbles: true, composed: true }));
-
-      setTimeout(() => {
-        // Clear the shared promise so our panel re-mounts fresh after navigation
-        window.__fcResourcesPromise = null;
-        history.pushState(null, "", returnPath);
-        window.dispatchEvent(new CustomEvent("location-changed", { bubbles: true, composed: true }));
-        resolve();
-      }, 2500);
+    const seen = new Set();
+    const allResources = [
+      ...(Array.isArray(globalResources) ? globalResources : []),
+      ...(lovelaceConfig?.resources || []),
+    ].filter(r => {
+      if (!r?.url || seen.has(r.url)) return false;
+      seen.add(r.url);
+      return true;
     });
+
+    console.log("[FamilyCalendar] Loading", allResources.length, "Lovelace resources");
+
+    await Promise.all(allResources.map(res => {
+      const bareUrl = res.url.split("?")[0];
+      if (document.querySelector(`script[src^="${bareUrl}"]`)) return Promise.resolve();
+      return new Promise(resolve => {
+        const s = document.createElement("script");
+        s.src = res.url;
+        if (res.type === "module") s.type = "module";
+        s.onload = resolve;
+        s.onerror = () => { console.warn("[FamilyCalendar] Resource failed:", res.url); resolve(); };
+        document.head.appendChild(s);
+      });
+    }));
   }
 
   // Lazy-load js-yaml from jsDelivr (cached globally after first load).

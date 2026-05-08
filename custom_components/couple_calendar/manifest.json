@@ -1,7 +1,7 @@
 {
   "domain": "couple_calendar",
   "name": "Family Calendar",
-  "version": "2.6.7",
+  "version": "2.6.8",
   "documentation": "https://github.com/tylerdcooper/couple-calendar",
   "issue_tracker": "https://github.com/tylerdcooper/couple-calendar/issues",
   "codeowners": ["@tylerdcooper"],
