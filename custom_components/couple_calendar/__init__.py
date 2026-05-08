@@ -7,8 +7,9 @@ from pathlib import Path
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.components.frontend import async_register_built_in_panel, async_remove_panel
+from homeassistant.components.frontend import async_register_built_in_panel, async_remove_panel, add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components import websocket_api
 
@@ -91,9 +92,49 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
+@callback
+def _inject_lovelace_resources(hass: HomeAssistant) -> None:
+    """Inject all Lovelace resources (HACS cards etc.) as extra JS URLs.
+
+    This makes them available on every page at index.html level — before any
+    panel renders — so sidebar cards work without visiting a Lovelace dashboard
+    first.  Called after HA finishes starting so hass.data["lovelace"] exists.
+    """
+    try:
+        lovelace_data = hass.data.get("lovelace")
+        if not lovelace_data:
+            return
+        resources = getattr(lovelace_data, "resources", None)
+        if not resources:
+            return
+        count = 0
+        for item in resources.async_items():
+            url = item.get("url", "")
+            res_type = item.get("type", "")
+            if url and res_type in ("module", "js"):
+                add_extra_js_url(hass, url)
+                count += 1
+        if count:
+            _LOGGER.debug("Family Calendar: injected %d Lovelace resources as extra JS", count)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("Family Calendar: could not inject Lovelace resources: %s", err)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["entry_id"] = entry.entry_id
+
+    # Inject Lovelace resources so HACS sidebar cards load on any page.
+    # If HA is already running (config-entry reload) call immediately;
+    # otherwise wait for startup to complete so hass.data["lovelace"] exists.
+    if hass.is_running:
+        _inject_lovelace_resources(hass)
+    else:
+        @callback
+        def _on_started(*_):
+            _inject_lovelace_resources(hass)
+
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_started)
 
     await hass.http.async_register_static_paths([
         StaticPathConfig(f"/{STATIC_PATH}", str(FRONTEND_DIR), cache_headers=True)
