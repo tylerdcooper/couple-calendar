@@ -1564,7 +1564,7 @@ class CoupleCalendarPanel extends HTMLElement {
             <div class="settings-row" style="margin-top:4px;">
               <label>Sidebar width (px)</label>
               <input type="number" id="s-sidebar-width" value="${cfg.sidebarWidth ?? 300}" min="100" max="800" step="10"
-                style="width:80px;padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:${p.surfaceAlt};color:${p.text};font-size:14px;text-align:center;">
+                style="width:80px;padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:inherit;font-size:14px;text-align:center;">
             </div>
             <div class="settings-section-title" style="margin-top:8px;font-size:10px;">HEADER BADGES <span style="font-weight:400;font-style:italic;opacity:0.7">— replaces clock (add sensor.time for a time badge)</span></div>
             <div id="s-badges-list">
