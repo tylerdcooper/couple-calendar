@@ -1359,7 +1359,7 @@ class CoupleCalendarPanel extends HTMLElement {
 
   // ── Kiosk sidebar ────────────────────────────────────────────────────
 
-  _renderSidebar() {
+  async _renderSidebar() {
     const el = this.shadowRoot.getElementById("cc-sidebar");
     if (!el) return;
     el.innerHTML = "";
@@ -1369,58 +1369,53 @@ class CoupleCalendarPanel extends HTMLElement {
 
     const cards = this._config.sidebarCards || [];
     if (!cards.length) {
-      el.innerHTML = `<div style="padding:16px;color:${this._config.theme==="dark"?"#8B949E":"#9CA3AF"};font-size:13px;text-align:center;line-height:1.6;">
+      el.innerHTML = `<div style="padding:16px;color:#8B949E;font-size:13px;text-align:center;line-height:1.6;">
         Open ☰ Settings → Kiosk Mode to add sidebar cards
       </div>`;
       return;
     }
 
+    // Use HA's own card helpers — the same system Lovelace uses.
+    // This handles custom: prefixes, lazy loading, and proper error states.
+    let helpers = null;
+    if (window.loadCardHelpers) {
+      try { helpers = await window.loadCardHelpers(); } catch (_) {}
+    }
+
     for (const cardConfig of cards) {
-      const cardEl = this._createCardElement(cardConfig);
+      let cardEl = null;
+      try {
+        if (helpers?.createCardElement) {
+          cardEl = await helpers.createCardElement(cardConfig);
+        } else {
+          // Fallback: manual element lookup
+          cardEl = this._createCardElementFallback(cardConfig);
+        }
+      } catch (e) {
+        console.warn("[FamilyCalendar] Could not create card:", e);
+      }
       if (cardEl) {
+        if (typeof cardEl.setConfig === "function") {
+          try { cardEl.setConfig(cardConfig); } catch (_) {}
+        }
+        cardEl.hass = this._hass;
         el.appendChild(cardEl);
         this._sidebarCardEls.push(cardEl);
       }
     }
   }
 
-  _createCardElement(config) {
+  // Fallback card creator used when HA's loadCardHelpers isn't available
+  _createCardElementFallback(config) {
     const type = config.type;
     if (!type) return null;
-
-    // HA YAML uses "custom:my-card" but the registered element name is just "my-card"
-    const isCustom   = type.startsWith("custom:");
+    const isCustom    = type.startsWith("custom:");
     const elementName = isCustom ? type.slice(7) : type;
-    // Built-in HA cards are registered as hui-{type}-card
     const builtinName = isCustom ? null : `hui-${type}-card`;
-
-    let el = null;
-    const registeredName = (builtinName && customElements.get(builtinName)) ? builtinName
-                         : (customElements.get(elementName) ? elementName : null);
-
-    if (registeredName) {
-      el = document.createElement(registeredName);
-    } else {
-      // Element not registered yet — show a brief loading placeholder and
-      // re-render the sidebar automatically once it becomes defined.
-      const placeholder = document.createElement("div");
-      placeholder.style.cssText = "padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.05);color:#8B949E;font-size:12px;";
-      placeholder.textContent = `Loading ${type}…`;
-      customElements.whenDefined(elementName)
-        .then(() => { if (this._config?.kioskMode) this._renderSidebar(); })
-        .catch(() => {
-          placeholder.textContent = `Card "${type}" not found. Is it installed in HACS?`;
-        });
-      return placeholder;
-    }
-
-    try {
-      if (typeof el.setConfig === "function") el.setConfig(config);
-    } catch (e) {
-      console.warn(`[FamilyCalendar] Error configuring card "${type}":`, e.message);
-    }
-    el.hass = this._hass;
-    return el;
+    const name = (builtinName && customElements.get(builtinName)) ? builtinName
+               : (customElements.get(elementName) ? elementName : null);
+    if (!name) return null;
+    return document.createElement(name);
   }
 
   // ── Header badges ────────────────────────────────────────────────────
