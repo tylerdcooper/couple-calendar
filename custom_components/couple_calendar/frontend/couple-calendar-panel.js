@@ -603,16 +603,17 @@ class CoupleCalendarPanel extends HTMLElement {
     const pc = this._panelConfig;
     const ls = this._localSettings;
 
-    // Display preferences — localStorage overrides HA config
+    // Settings: HA config entry (panelConfig) is authoritative — synced across all devices.
+    // localStorage overrides apply only when set explicitly (local-only tweaks).
     this._config = {
       firstDayOfWeek: ls.firstDayOfWeek !== undefined ? ls.firstDayOfWeek : (pc.firstDayOfWeek ?? 0),
       timeFormat:     ls.timeFormat  || pc.timeFormat  || "12h",
       defaultView:    ls.defaultView || pc.defaultView || "month",
       theme:          ls.theme       || pc.theme       || "dark",
-      // Kiosk mode settings — stored entirely in localStorage
-      kioskMode:      ls.kioskMode   ?? false,
-      headerBadges:   ls.headerBadges ?? [],   // entity IDs shown in header center
-      sidebarCards:   ls.sidebarCards ?? [],   // [{type, entity, ...config}]
+      // Kiosk mode — stored in HA config entry so all devices share the same setup
+      kioskMode:      pc.kioskMode    ?? ls.kioskMode    ?? false,
+      headerBadges:   pc.headerBadges ?? ls.headerBadges ?? [],
+      sidebarCards:   pc.sidebarCards ?? ls.sidebarCards ?? [],
     };
 
     // Calendars: localStorage overrides HA config (allows in-app add/remove)
@@ -1386,19 +1387,34 @@ class CoupleCalendarPanel extends HTMLElement {
                         : (customElements.get(elementName) ? elementName : null);
 
       if (!regName) {
-        // Not registered yet — show placeholder and schedule retries
-        const ph = document.createElement("div");
-        ph.style.cssText = "padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.04);color:#8B949E;font-size:12px;";
-        ph.textContent = `Loading ${type}…`;
-        el.appendChild(ph);
-        // Retry at intervals — _renderSidebar re-runs once the element registers
-        [500, 1500, 3500].forEach(d =>
-          setTimeout(() => {
-            if (this._config?.kioskMode && customElements.get(elementName)) {
-              this._renderSidebar().catch(() => {});
-            }
-          }, d)
-        );
+        // Element not yet registered — wait up to 10 s then give up
+        const resolved = await Promise.race([
+          customElements.whenDefined(elementName).then(() => elementName),
+          new Promise(r => setTimeout(() => r(null), 10_000)),
+        ]);
+        if (!resolved) {
+          const errDiv = document.createElement("div");
+          errDiv.style.cssText = "padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.04);color:#f87171;font-size:12px;";
+          errDiv.textContent = `"${type}" did not load. Visit a Lovelace dashboard first, or check it's installed.`;
+          el.appendChild(errDiv);
+          continue;
+        }
+        // Element is now registered — fall through using the resolved name
+        Object.assign({ regName: resolved }, { regName: resolved });
+        // Re-check after whenDefined resolves
+        const newReg = customElements.get(builtinName || "") ? builtinName
+                     : customElements.get(elementName) ? elementName : resolved;
+        const cardEl2 = document.createElement(newReg);
+        try { if (typeof cardEl2.setConfig === "function") cardEl2.setConfig(cardConfig); }
+        catch (e) {
+          const errDiv = document.createElement("div");
+          errDiv.style.cssText = "padding:12px;border-radius:10px;background:rgba(220,38,38,0.1);color:#f87171;font-size:12px;";
+          errDiv.textContent = `${type}: ${e.message}`;
+          el.appendChild(errDiv); continue;
+        }
+        cardEl2.hass = this._hass;
+        el.appendChild(cardEl2);
+        this._sidebarCardEls.push(cardEl2);
         continue;
       }
 
@@ -1709,33 +1725,37 @@ class CoupleCalendarPanel extends HTMLElement {
         }
       }).filter(Boolean);
 
-    // Display preferences stay in localStorage
-    const displayPatch = {
-      theme:          dr.querySelector("#s-theme")?.value,
-      timeFormat:     dr.querySelector("#s-time")?.value,
-      firstDayOfWeek: dr.querySelector("#s-fdow")?.value ?? 0,
-      defaultView:    dr.querySelector("#s-default-view")?.value,
+    const allSettings = {
+      // All settings go to HA — synced across every device
+      theme:          dr.querySelector("#s-theme")?.value          || "dark",
+      timeFormat:     dr.querySelector("#s-time")?.value           || "12h",
+      firstDayOfWeek: dr.querySelector("#s-fdow")?.value          ?? 0,
+      defaultView:    dr.querySelector("#s-default-view")?.value   || "month",
       kioskMode,
       headerBadges,
       sidebarCards,
     };
 
-    // Save calendars: try WebSocket (persists to HA), fall back to localStorage
+    // Save everything to HA config entry (persists across all devices)
     try {
-      await this._hass.callWS({ type: "couple_calendar/update_calendars", calendars: updatedCals });
-      // WebSocket saved — clear any localStorage calendar override so HA config is authoritative
-      const ls = this._loadLocalSettings();
-      delete ls.calendars;
-      localStorage.setItem("couple_calendar_settings", JSON.stringify({ ...ls, ...displayPatch }));
+      await this._hass.callWS({
+        type: "couple_calendar/update_settings",
+        settings: { ...allSettings, [CONF_CALENDARS ?? "calendars"]: updatedCals },
+      });
+      // HA is now authoritative — clear any stale localStorage overrides
+      localStorage.removeItem("couple_calendar_settings");
     } catch (e) {
-      // WebSocket failed — save to localStorage as fallback
-      this._saveLocalSettings({ ...displayPatch, calendars: updatedCals });
+      // WebSocket failed — fall back to localStorage so changes aren't lost
+      this._saveLocalSettings({ ...allSettings, calendars: updatedCals });
     }
 
+    // Update local state immediately without waiting for HA reload
     this._calendars = updatedCals;
-    this._saveLocalSettings(displayPatch);
+    if (this._config) Object.assign(this._config, allSettings);
     this._closeDrawer();
-    this._applyConfig();
+    this._render();
+    this._renderSidebar().catch(() => {});
+    this._fetchEvents();
   }
 
   // ── Event detail modal ────────────────────────────────────────────────

@@ -24,6 +24,12 @@ _LOGGER = logging.getLogger(__name__)
 FRONTEND_DIR = Path(__file__).parent / "frontend"
 JS_FILE = FRONTEND_DIR / "couple-calendar-panel.js"
 
+# All display/kiosk settings stored in the config entry
+DISPLAY_SETTINGS = [
+    "theme", "timeFormat", "firstDayOfWeek", "defaultView",
+    "kioskMode", "headerBadges", "sidebarCards",
+]
+
 
 def _js_hash() -> str:
     return hashlib.md5(JS_FILE.read_bytes()).hexdigest()[:12]
@@ -96,8 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     js_hash    = await hass.async_add_executor_job(_js_hash)
     module_url = f"/{STATIC_PATH}/couple-calendar-panel.js?v={js_hash}"
 
-    data      = {**entry.data, **entry.options}
-    calendars = data.get(CONF_CALENDARS, [])
+    data = {**entry.data, **entry.options}
 
     async_register_built_in_panel(
         hass,
@@ -112,18 +117,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "embed_iframe":          False,
                 "trust_external_script": False,
             },
-            "calendars":        calendars,
-            "firstDayOfWeek":   0,
-            "timeFormat":       "12h",
-            "defaultView":      "month",
-            "theme":            "dark",
+            # Calendars
+            "calendars": data.get(CONF_CALENDARS, []),
+            # Display preferences — all cross-device via HA config entry
+            "theme":          data.get("theme",          "dark"),
+            "timeFormat":     data.get("timeFormat",     "12h"),
+            "firstDayOfWeek": data.get("firstDayOfWeek", 0),
+            "defaultView":    data.get("defaultView",    "month"),
+            # Kiosk mode
+            "kioskMode":    data.get("kioskMode",    False),
+            "headerBadges": data.get("headerBadges", []),
+            "sidebarCards": data.get("sidebarCards", []),
         },
         require_admin=False,
     )
 
-    # Register WebSocket command so the in-app settings drawer can
-    # persist calendar changes back to the HA config entry.
     websocket_api.async_register_command(hass, ws_update_calendars)
+    websocket_api.async_register_command(hass, ws_update_settings)
 
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
     return True
@@ -142,7 +152,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-# ── WebSocket command ──────────────────────────────────────────────────────────
+# ── WebSocket commands ────────────────────────────────────────────────────────
 
 @websocket_api.websocket_command({
     vol.Required("type"): f"{DOMAIN}/update_calendars",
@@ -154,7 +164,7 @@ def ws_update_calendars(
     connection: websocket_api.ActiveConnection,
     msg: dict,
 ) -> None:
-    """Persist calendar config changes from the in-app settings drawer."""
+    """Update calendar list only (legacy command, kept for compatibility)."""
     entry_id = hass.data.get(DOMAIN, {}).get("entry_id")
     if not entry_id:
         connection.send_error(msg["id"], "not_found", "Integration not configured")
@@ -163,9 +173,35 @@ def ws_update_calendars(
     if not entry:
         connection.send_error(msg["id"], "not_found", "Config entry not found")
         return
-
     hass.config_entries.async_update_entry(
         entry,
-        data={CONF_CALENDARS: msg["calendars"]},
+        data={**entry.data, CONF_CALENDARS: msg["calendars"]},
+    )
+    connection.send_result(msg["id"], {"success": True})
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/update_settings",
+    vol.Required("settings"): dict,
+})
+@callback
+def ws_update_settings(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    """Persist all app settings so every device gets them on next load."""
+    entry_id = hass.data.get(DOMAIN, {}).get("entry_id")
+    if not entry_id:
+        connection.send_error(msg["id"], "not_found", "Integration not configured")
+        return
+    entry = hass.config_entries.async_get_entry(entry_id)
+    if not entry:
+        connection.send_error(msg["id"], "not_found", "Config entry not found")
+        return
+    # Merge new settings into existing data (preserves calendars and other keys)
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, **msg["settings"]},
     )
     connection.send_result(msg["id"], {"success": True})
