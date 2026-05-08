@@ -124,10 +124,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "timeFormat":     data.get("timeFormat",     "12h"),
             "firstDayOfWeek": data.get("firstDayOfWeek", 0),
             "defaultView":    data.get("defaultView",    "month"),
-            # Kiosk mode
+            # Sidebar
             "kioskMode":    data.get("kioskMode",    False),
             "headerBadges": data.get("headerBadges", []),
             "sidebarCards": data.get("sidebarCards", []),
+            "sidebarWidth": data.get("sidebarWidth", 300),
         },
         require_admin=False,
     )

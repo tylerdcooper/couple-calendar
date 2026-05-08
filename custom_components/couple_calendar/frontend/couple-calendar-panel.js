@@ -176,18 +176,8 @@ function buildStyles(cfg) {
   }
   .kiosk-sidebar::-webkit-scrollbar { display: none; }
   .kiosk-mode .kiosk-sidebar {
-    width: 300px; overflow-y: auto; padding: 14px 12px;
+    width: var(--fc-sidebar-width, 300px); overflow-y: auto; padding: 14px 12px;
   }
-
-  /* ── Kiosk font boosts (easier to read at distance) ── */
-  .kiosk-mode .event-chip   { font-size: 13px !important; padding: 4px 8px !important; }
-  .kiosk-mode .day-number   { font-size: 20px !important; width: 36px !important; height: 36px !important; }
-  .kiosk-mode .more-events  { font-size: 12px !important; }
-  .kiosk-mode .week-event-title { font-size: 13px !important; }
-  .kiosk-mode .week-event-time  { font-size: 12px !important; }
-  .kiosk-mode .time-label       { font-size: 12px !important; }
-  .kiosk-mode .agenda-event-title { font-size: 17px !important; }
-  .kiosk-mode .agenda-event-time  { font-size: 15px !important; }
 
   /* ── Header badges (center slot in kiosk mode) ── */
   .header-badges { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
@@ -239,21 +229,21 @@ function buildStyles(cfg) {
   .day-cell.other-month { opacity: 0.28; }
   .day-cell.today { border-color: ${p.today}66; }
   .day-number {
-    font-size: 17px; font-weight: 600; line-height: 1;
-    width: 32px; height: 32px; border-radius: 50%;
+    font-size: 20px; font-weight: 600; line-height: 1;
+    width: 36px; height: 36px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0; align-self: flex-start;
   }
   .day-cell.today .day-number { background: ${p.today}; color: ${p.todayText}; font-weight: 800; }
   .event-chips { display: flex; flex-direction: column; gap: 3px; margin-top: 5px; flex: 1; overflow: hidden; }
   .event-chip {
-    padding: 3px 7px; border-radius: 5px; font-size: 12px; font-weight: 500;
+    padding: 4px 8px; border-radius: 5px; font-size: 13px; font-weight: 500;
     line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     cursor: pointer; transition: opacity 0.1s;
   }
   .event-chip:active { opacity: 0.7; }
   .more-events {
-    font-size: 11px; color: ${p.textSub}; font-weight: 700;
+    font-size: 12px; color: ${p.textSub}; font-weight: 700;
     padding: 2px 4px; margin-top: 1px; cursor: pointer;
   }
 
@@ -287,7 +277,7 @@ function buildStyles(cfg) {
   .time-gutter { width: 56px; flex-shrink: 0; border-right: 1px solid ${p.border}; position: relative; }
   .time-label {
     height: 60px; display: flex; align-items: flex-start; justify-content: flex-end;
-    padding: 0 8px; font-size: 11px; color: ${p.textSub}; transform: translateY(-8px);
+    padding: 0 8px; font-size: 12px; color: ${p.textSub}; transform: translateY(-8px);
   }
   .week-days-grid { flex: 1; display: grid; gap: 2px; position: relative; }
   .week-day-time-col { position: relative; border-right: 1px solid ${p.border}; }
@@ -304,8 +294,8 @@ function buildStyles(cfg) {
     box-sizing: border-box;
   }
   .week-event:active { opacity: 0.75; }
-  .week-event-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .week-event-time  { font-size: 11px; opacity: 0.85; }
+  .week-event-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .week-event-time  { font-size: 12px; opacity: 0.85; }
 
   /* ── Agenda view ── */
   .agenda-view { height: 100%; overflow-y: auto; padding: 16px 24px; }
@@ -324,8 +314,8 @@ function buildStyles(cfg) {
   .agenda-event:active { background: ${p.surfaceAlt}; transform: scale(0.99); }
   .agenda-event-color { width: 4px; border-radius: 2px; flex-shrink: 0; align-self: stretch; min-height: 36px; }
   .agenda-event-info { flex: 1; min-width: 0; }
-  .agenda-event-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-  .agenda-event-time  { font-size: 14px; color: ${p.textSub}; display: flex; align-items: center; gap: 6px; }
+  .agenda-event-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+  .agenda-event-time  { font-size: 15px; color: ${p.textSub}; display: flex; align-items: center; gap: 6px; }
   .agenda-event-who   { font-size: 12px; font-weight: 700; margin-top: 5px; }
   .agenda-empty { text-align: center; color: ${p.textMuted}; padding: 64px 24px; font-size: 16px; line-height: 1.7; }
 
@@ -610,10 +600,11 @@ class CoupleCalendarPanel extends HTMLElement {
       timeFormat:     ls.timeFormat  || pc.timeFormat  || "12h",
       defaultView:    ls.defaultView || pc.defaultView || "month",
       theme:          ls.theme       || pc.theme       || "dark",
-      // Kiosk: localStorage (most recent save on this device) → HA config → default
-      kioskMode:    ls.kioskMode    !== undefined ? ls.kioskMode    : (pc.kioskMode    ?? false),
-      headerBadges: ls.headerBadges !== undefined ? ls.headerBadges : (pc.headerBadges ?? []),
-      sidebarCards: ls.sidebarCards !== undefined ? ls.sidebarCards : (pc.sidebarCards ?? []),
+      // Sidebar: localStorage (most recent save on this device) → HA config → default
+      kioskMode:    ls.kioskMode     !== undefined ? ls.kioskMode     : (pc.kioskMode     ?? false),
+      headerBadges: ls.headerBadges  !== undefined ? ls.headerBadges  : (pc.headerBadges  ?? []),
+      sidebarCards: ls.sidebarCards  !== undefined ? ls.sidebarCards  : (pc.sidebarCards  ?? []),
+      sidebarWidth: ls.sidebarWidth  !== undefined ? ls.sidebarWidth  : (pc.sidebarWidth  ?? 300),
     };
 
     // Calendars: localStorage (most recent save) → HA panelConfig → migrate v1
@@ -896,6 +887,7 @@ class CoupleCalendarPanel extends HTMLElement {
 
     const root = document.createElement("div");
     root.className = `panel-root${this._config?.kioskMode ? " kiosk-mode" : ""}`;
+    root.style.setProperty("--fc-sidebar-width", `${this._config?.sidebarWidth ?? 300}px`);
     root.innerHTML = `
       <div class="kiosk-sidebar"  id="cc-sidebar"></div>
       <div class="panel-right">
@@ -1563,12 +1555,17 @@ class CoupleCalendarPanel extends HTMLElement {
         </div>
 
         <div class="settings-section">
-          <div class="settings-section-title">Kiosk Mode</div>
+          <div class="settings-section-title">Sidebar</div>
           <div class="settings-row">
-            <label>Enable kiosk mode</label>
+            <label>Enable sidebar</label>
             <input type="checkbox" id="s-kiosk" ${cfg.kioskMode?"checked":""} style="width:20px;height:20px;cursor:pointer;accent-color:${firstColor};">
           </div>
           <div id="s-kiosk-options" style="${cfg.kioskMode?"":"display:none"}">
+            <div class="settings-row" style="margin-top:4px;">
+              <label>Sidebar width (px)</label>
+              <input type="number" id="s-sidebar-width" value="${cfg.sidebarWidth ?? 300}" min="100" max="800" step="10"
+                style="width:80px;padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:${p.surfaceAlt};color:${p.text};font-size:14px;text-align:center;">
+            </div>
             <div class="settings-section-title" style="margin-top:8px;font-size:10px;">HEADER BADGES <span style="font-weight:400;font-style:italic;opacity:0.7">— replaces clock (add sensor.time for a time badge)</span></div>
             <div id="s-badges-list">
               ${(cfg.headerBadges||[]).map((id,i) => `
@@ -1765,6 +1762,7 @@ class CoupleCalendarPanel extends HTMLElement {
       kioskMode,
       headerBadges,
       sidebarCards,
+      sidebarWidth:   parseInt(dr.querySelector("#s-sidebar-width")?.value, 10) || 300,
       calendars:      updatedCals,
     };
 
