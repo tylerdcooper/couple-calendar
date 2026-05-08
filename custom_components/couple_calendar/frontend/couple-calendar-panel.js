@@ -555,6 +555,7 @@ class CoupleCalendarPanel extends HTMLElement {
     this._drawerOpen   = false;
     this._lastFetched  = null;
     this._sidebarCardEls = []; // live references for hass pass-through
+    this._mounted      = false;
 
     this._touchStartX  = 0;
     this._touchStartY  = 0;
@@ -564,6 +565,9 @@ class CoupleCalendarPanel extends HTMLElement {
     this._startClock();
     this._startAutoRefresh();
   }
+
+  connectedCallback()    { this._mounted = true; }
+  disconnectedCallback() { this._mounted = false; }
 
   // ── HA wiring ──────────────────────────────────────────────────────────
 
@@ -1362,12 +1366,16 @@ class CoupleCalendarPanel extends HTMLElement {
 
     // Ensure all Lovelace resources (HACS card scripts) are loaded before
     // attempting to create any card elements.
+    el.innerHTML = `<div style="padding:16px;color:#8B949E;font-size:12px;text-align:center;line-height:1.6;">Loading...</div>`;
     await this._loadLovelaceResources();
+    if (!this._mounted) return; // navigated away during resource load
+
+    el.innerHTML = "";
 
     const cards = this._config.sidebarCards || [];
     if (!cards.length) {
       el.innerHTML = `<div style="padding:16px;color:#8B949E;font-size:13px;text-align:center;line-height:1.6;">
-        Open ☰ Settings → Kiosk Mode to add sidebar cards
+        Open ☰ Settings → Sidebar to add sidebar cards
       </div>`;
       return;
     }
@@ -1849,14 +1857,12 @@ class CoupleCalendarPanel extends HTMLElement {
 
   async _doLoadLovelaceResources() {
     if (!this._hass) return;
+
+    // Step 1: load via lovelace/resources WS + script tags
     try {
       const resources = await this._hass.callWS({ type: "lovelace/resources" });
       await Promise.all((resources || []).map(res => {
         if (!res.url) return Promise.resolve();
-        // Use <script> / <script type="module"> tags instead of import().
-        // import() is aborted by HA's router during panel init (AbortError),
-        // silently preventing custom element registration. Script tags are
-        // loaded by the browser independently and are not subject to that abort.
         const bareUrl = res.url.split("?")[0];
         if (document.querySelector(`script[src^="${bareUrl}"]`)) return Promise.resolve();
         return new Promise(resolve => {
@@ -1864,16 +1870,41 @@ class CoupleCalendarPanel extends HTMLElement {
           s.src = res.url;
           if (res.type === "module") s.type = "module";
           s.onload = resolve;
-          s.onerror = () => {
-            console.warn("[FamilyCalendar] Resource failed to load:", res.url);
-            resolve();
-          };
+          s.onerror = () => { console.warn("[FamilyCalendar] Resource failed:", res.url); resolve(); };
           document.head.appendChild(s);
         });
       }));
     } catch (e) {
       console.warn("[FamilyCalendar] Could not fetch Lovelace resources:", e);
     }
+
+    // Step 2: check whether any sidebar custom elements are still missing
+    if (window.__fcLovelacePreloaded) return; // already did the Lovelace navigation this session
+    const missingElements = (this._config?.sidebarCards || [])
+      .filter(c => c.type?.startsWith("custom:"))
+      .map(c => c.type.slice(7))
+      .filter(name => !customElements.get(name));
+    if (missingElements.length === 0) return;
+
+    // Step 3: script tags didn't register everything — briefly navigate to
+    // the main Lovelace dashboard so HA's own resource loading fires, then
+    // auto-return. This is a one-per-session fallback.
+    console.log("[FamilyCalendar] Custom elements still missing:", missingElements, "— navigating to Lovelace to preload");
+    window.__fcLovelacePreloaded = true;
+    const returnPath = window.location.pathname;
+
+    await new Promise(resolve => {
+      history.pushState(null, "", "/lovelace/0");
+      window.dispatchEvent(new CustomEvent("location-changed", { bubbles: true, composed: true }));
+
+      setTimeout(() => {
+        // Clear the shared promise so our panel re-mounts fresh after navigation
+        window.__fcResourcesPromise = null;
+        history.pushState(null, "", returnPath);
+        window.dispatchEvent(new CustomEvent("location-changed", { bubbles: true, composed: true }));
+        resolve();
+      }, 2500);
+    });
   }
 
   // Lazy-load js-yaml from jsDelivr (cached globally after first load).
