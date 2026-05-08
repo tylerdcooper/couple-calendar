@@ -178,7 +178,7 @@ function buildStyles(cfg) {
   .kiosk-mode .kiosk-sidebar {
     width: var(--fc-sidebar-width, 300px); overflow-y: auto; padding: 14px 12px;
   }
-  .kiosk-sidebar > * { flex-shrink: 0; flex-grow: 0; }
+  .kiosk-sidebar > * { flex-shrink: 0; flex-grow: 0; width: 100%; height: auto !important; }
 
   /* ── Header badges (center slot in kiosk mode) ── */
   .header-badges { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
@@ -1851,27 +1851,25 @@ class CoupleCalendarPanel extends HTMLElement {
     if (!this._hass) return;
     try {
       const resources = await this._hass.callWS({ type: "lovelace/resources" });
-      await Promise.all((resources || []).map(async res => {
-        if (!res.url) return;
-        try {
-          if (res.type === "module") {
-            // import() is what HA's own Lovelace uses — respects importmaps etc.
-            await import(res.url);
-          } else {
-            const bareUrl = res.url.split("?")[0];
-            if (document.querySelector(`script[src^="${bareUrl}"]`)) return;
-            await new Promise(resolve => {
-              const s = document.createElement("script");
-              s.src = res.url; s.onload = resolve; s.onerror = resolve;
-              document.head.appendChild(s);
-            });
-          }
-        } catch (e) {
-          if (e?.name !== "AbortError") {
-            console.warn("[FamilyCalendar] Resource load issue:", res.url, e?.message);
-          }
-          // AbortError (HA router navigation) or other errors — don't block
-        }
+      await Promise.all((resources || []).map(res => {
+        if (!res.url) return Promise.resolve();
+        // Use <script> / <script type="module"> tags instead of import().
+        // import() is aborted by HA's router during panel init (AbortError),
+        // silently preventing custom element registration. Script tags are
+        // loaded by the browser independently and are not subject to that abort.
+        const bareUrl = res.url.split("?")[0];
+        if (document.querySelector(`script[src^="${bareUrl}"]`)) return Promise.resolve();
+        return new Promise(resolve => {
+          const s = document.createElement("script");
+          s.src = res.url;
+          if (res.type === "module") s.type = "module";
+          s.onload = resolve;
+          s.onerror = () => {
+            console.warn("[FamilyCalendar] Resource failed to load:", res.url);
+            resolve();
+          };
+          document.head.appendChild(s);
+        });
       }));
     } catch (e) {
       console.warn("[FamilyCalendar] Could not fetch Lovelace resources:", e);
