@@ -1375,49 +1375,43 @@ class CoupleCalendarPanel extends HTMLElement {
       return;
     }
 
-    // Use HA's own card helpers — the same system Lovelace uses.
-    // This handles custom: prefixes, lazy loading, and proper error states.
-    let helpers = null;
-    if (window.loadCardHelpers) {
-      try { helpers = await window.loadCardHelpers(); } catch (_) {}
-    }
-
     for (const cardConfig of cards) {
-      let cardEl = null;
-      try {
-        if (helpers?.createCardElement) {
-          cardEl = await helpers.createCardElement(cardConfig);
-        } else {
-          // Fallback: manual element lookup
-          cardEl = this._createCardElementFallback(cardConfig);
-        }
-      } catch (e) {
-        console.warn("[FamilyCalendar] Could not create card:", e);
-      }
-      if (cardEl) {
-        // createCardElement already called setConfig internally — don't call it again.
-        // Only call setConfig for the fallback path where we created the element manually.
-        if (!helpers?.createCardElement && typeof cardEl.setConfig === "function") {
-          try { cardEl.setConfig(cardConfig); } catch (_) {}
-        }
-        cardEl.hass = this._hass;
-        el.appendChild(cardEl);
-        this._sidebarCardEls.push(cardEl);
-      }
-    }
-  }
+      const type = cardConfig.type;
+      if (!type) continue;
 
-  // Fallback card creator used when HA's loadCardHelpers isn't available
-  _createCardElementFallback(config) {
-    const type = config.type;
-    if (!type) return null;
-    const isCustom    = type.startsWith("custom:");
-    const elementName = isCustom ? type.slice(7) : type;
-    const builtinName = isCustom ? null : `hui-${type}-card`;
-    const name = (builtinName && customElements.get(builtinName)) ? builtinName
-               : (customElements.get(elementName) ? elementName : null);
-    if (!name) return null;
-    return document.createElement(name);
+      const isCustom    = type.startsWith("custom:");
+      const elementName = isCustom ? type.slice(7) : type;
+      const builtinName = isCustom ? null : `hui-${type}-card`;
+      const regName     = (builtinName && customElements.get(builtinName)) ? builtinName
+                        : (customElements.get(elementName) ? elementName : null);
+
+      if (!regName) {
+        // Not registered yet — show placeholder and auto-retry on define
+        const ph = document.createElement("div");
+        ph.style.cssText = "padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.04);color:#8B949E;font-size:12px;";
+        ph.textContent = `Loading ${type}…`;
+        el.appendChild(ph);
+        customElements.whenDefined(elementName)
+          .then(() => { if (this._config?.kioskMode) this._renderSidebar(); })
+          .catch(() => { ph.textContent = `"${type}" not found. Is it installed?`; });
+        continue;
+      }
+
+      // Create element and call setConfig ourselves so we control errors
+      const cardEl = document.createElement(regName);
+      try {
+        if (typeof cardEl.setConfig === "function") cardEl.setConfig(cardConfig);
+      } catch (e) {
+        const errDiv = document.createElement("div");
+        errDiv.style.cssText = "padding:12px;border-radius:10px;background:rgba(220,38,38,0.1);color:#f87171;font-size:12px;line-height:1.5;";
+        errDiv.textContent = `${type}: ${e.message}`;
+        el.appendChild(errDiv);
+        continue;
+      }
+      cardEl.hass = this._hass;
+      el.appendChild(cardEl);
+      this._sidebarCardEls.push(cardEl);
+    }
   }
 
   // ── Header badges ────────────────────────────────────────────────────
