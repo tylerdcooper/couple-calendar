@@ -162,8 +162,44 @@ function buildStyles(cfg) {
     font-size: 12px; color: ${p.textMuted}; white-space: nowrap;
   }
 
-  /* ── Main ── */
+  /* ── Main content area ── */
+  .panel-content { display: flex; flex: 1; overflow: hidden; }
   .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+
+  /* ── Kiosk sidebar ── */
+  .kiosk-sidebar {
+    width: 0; flex-shrink: 0; overflow: hidden;
+    display: flex; flex-direction: column; gap: 12px;
+    background: ${p.surface}; border-right: 1px solid ${p.border};
+    transition: width 0.3s cubic-bezier(0.4,0,0.2,1);
+    scrollbar-width: none;
+  }
+  .kiosk-sidebar::-webkit-scrollbar { display: none; }
+  .kiosk-mode .kiosk-sidebar {
+    width: 300px; overflow-y: auto; padding: 14px 12px;
+  }
+
+  /* ── Kiosk font boosts (easier to read at distance) ── */
+  .kiosk-mode .event-chip   { font-size: 13px !important; padding: 4px 8px !important; }
+  .kiosk-mode .day-number   { font-size: 20px !important; width: 36px !important; height: 36px !important; }
+  .kiosk-mode .more-events  { font-size: 12px !important; }
+  .kiosk-mode .week-event-title { font-size: 13px !important; }
+  .kiosk-mode .week-event-time  { font-size: 12px !important; }
+  .kiosk-mode .time-label       { font-size: 12px !important; }
+  .kiosk-mode .agenda-event-title { font-size: 17px !important; }
+  .kiosk-mode .agenda-event-time  { font-size: 15px !important; }
+
+  /* ── Header badges (center slot in kiosk mode) ── */
+  .header-badges { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
+  .badge {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 5px 12px; border-radius: 12px;
+    background: ${p.surfaceAlt}; cursor: pointer; min-width: 64px;
+    transition: background 0.15s;
+  }
+  .badge:active { background: ${p.surfaceHov}; }
+  .badge-value  { font-size: 16px; font-weight: 700; line-height: 1.15; white-space: nowrap; }
+  .badge-label  { font-size: 11px; color: ${p.textSub}; margin-top: 1px; white-space: nowrap; }
 
   /* ── Month grid ── */
   .month-view { display: flex; flex-direction: column; height: 100%; }
@@ -527,6 +563,7 @@ class CoupleCalendarPanel extends HTMLElement {
     this._activeFilter = "all";
     this._drawerOpen   = false;
     this._lastFetched  = null;
+    this._sidebarCardEls = []; // live references for hass pass-through
 
     this._touchStartX  = 0;
     this._touchStartY  = 0;
@@ -541,7 +578,19 @@ class CoupleCalendarPanel extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (!this._initialized) { this._initialized = true; this._applyConfig(); }
+    if (!this._initialized) {
+      this._initialized = true;
+      this._applyConfig();
+    } else {
+      // Push hass to sidebar cards so they get live state updates
+      for (const card of (this._sidebarCardEls || [])) {
+        try { card.hass = hass; } catch (_) {}
+      }
+      // Update badge values in-place (lightweight text update)
+      if (this._config?.kioskMode && this._config?.headerBadges?.length) {
+        this._updateBadges();
+      }
+    }
   }
 
   set panel(panel) {
@@ -560,6 +609,10 @@ class CoupleCalendarPanel extends HTMLElement {
       timeFormat:     ls.timeFormat  || pc.timeFormat  || "12h",
       defaultView:    ls.defaultView || pc.defaultView || "month",
       theme:          ls.theme       || pc.theme       || "dark",
+      // Kiosk mode settings — stored entirely in localStorage
+      kioskMode:      ls.kioskMode   ?? false,
+      headerBadges:   ls.headerBadges ?? [],   // entity IDs shown in header center
+      sidebarCards:   ls.sidebarCards ?? [],   // [{type, entity, ...config}]
     };
 
     // Calendars: localStorage overrides HA config (allows in-app add/remove)
@@ -841,11 +894,14 @@ class CoupleCalendarPanel extends HTMLElement {
     style.textContent = buildStyles(this._config || {});
 
     const root = document.createElement("div");
-    root.className = "panel-root";
+    root.className = `panel-root${this._config?.kioskMode ? " kiosk-mode" : ""}`;
     root.innerHTML = `
       <div class="header"         id="cc-header"></div>
       <div class="legend"         id="cc-legend"></div>
-      <div class="main"           id="cc-main"></div>
+      <div class="panel-content">
+        <div class="kiosk-sidebar" id="cc-sidebar"></div>
+        <div class="main"          id="cc-main"></div>
+      </div>
       <div class="drawer-overlay" id="cc-drawer-overlay"></div>
       <div class="drawer"         id="cc-drawer"></div>
       <div class="modal-overlay"  id="cc-modal-overlay">
@@ -857,10 +913,12 @@ class CoupleCalendarPanel extends HTMLElement {
     this.shadowRoot.appendChild(style);
     this.shadowRoot.appendChild(root);
 
+    this._sidebarCardEls = [];
     this._bindStaticEvents();
     this._renderHeader();
     this._renderLegend();
     this._renderMainContent();
+    this._renderSidebar();
     this._renderDrawer();
   }
 
@@ -883,10 +941,13 @@ class CoupleCalendarPanel extends HTMLElement {
         <button class="today-btn" id="cc-today-btn">Today</button>
       </div>
 
-      <div class="header-clock">
-        <div class="header-clock-time" id="cc-clock-time"></div>
-        <div class="header-clock-date" id="cc-clock-date"></div>
-      </div>
+      ${this._config?.kioskMode && (this._config?.headerBadges?.length)
+        ? `<div class="header-badges" id="cc-badges">${this._renderBadgesHTML()}</div>`
+        : `<div class="header-clock">
+             <div class="header-clock-time" id="cc-clock-time"></div>
+             <div class="header-clock-date" id="cc-clock-date"></div>
+           </div>`
+      }
 
       <div class="header-right">
         <div class="view-switcher">
@@ -1295,6 +1356,97 @@ class CoupleCalendarPanel extends HTMLElement {
     );
   }
 
+  // ── Kiosk sidebar ────────────────────────────────────────────────────
+
+  _renderSidebar() {
+    const el = this.shadowRoot.getElementById("cc-sidebar");
+    if (!el) return;
+    el.innerHTML = "";
+    this._sidebarCardEls = [];
+
+    if (!this._config?.kioskMode) return;
+
+    const cards = this._config.sidebarCards || [];
+    if (!cards.length) {
+      el.innerHTML = `<div style="padding:16px;color:${this._config.theme==="dark"?"#8B949E":"#9CA3AF"};font-size:13px;text-align:center;line-height:1.6;">
+        Open ☰ Settings → Kiosk Mode to add sidebar cards
+      </div>`;
+      return;
+    }
+
+    for (const cardConfig of cards) {
+      const cardEl = this._createCardElement(cardConfig);
+      if (cardEl) {
+        el.appendChild(cardEl);
+        this._sidebarCardEls.push(cardEl);
+      }
+    }
+  }
+
+  _createCardElement(config) {
+    const type = config.type;
+    if (!type) return null;
+
+    // HA built-in cards use the hui-{type}-card naming convention
+    const builtinName = `hui-${type}-card`;
+    let el = null;
+
+    if (customElements.get(builtinName)) {
+      el = document.createElement(builtinName);
+    } else if (customElements.get(type)) {
+      el = document.createElement(type);
+    } else {
+      // Card type not yet registered — may load later
+      const placeholder = document.createElement("div");
+      placeholder.style.cssText = "padding:10px 12px;border-radius:10px;background:rgba(255,255,255,0.05);color:#8B949E;font-size:12px;";
+      placeholder.textContent = `Card "${type}" not found. Make sure it's installed.`;
+      return placeholder;
+    }
+
+    try {
+      if (typeof el.setConfig === "function") el.setConfig(config);
+    } catch (e) {
+      console.warn(`[FamilyCalendar] Error configuring card "${type}":`, e.message);
+    }
+    el.hass = this._hass;
+    return el;
+  }
+
+  // ── Header badges ────────────────────────────────────────────────────
+
+  _renderBadgesHTML() {
+    const badges = this._config?.headerBadges || [];
+    if (!badges.length) return "";
+    return badges.map(entityId => {
+      const state = this._hass?.states?.[entityId];
+      if (!state) return `<div class="badge"><div class="badge-value">—</div><div class="badge-label">${entityId.split(".")[1]?.replace(/_/g," ") || entityId}</div></div>`;
+      const val   = state.state;
+      const attrs = state.attributes;
+      const unit  = attrs.unit_of_measurement || "";
+      const name  = (attrs.friendly_name || entityId).replace(/^[^.]+\./, "").replace(/_/g," ");
+      return `<div class="badge" data-entity="${entityId}">
+        <div class="badge-value">${val}${unit}</div>
+        <div class="badge-label">${name}</div>
+      </div>`;
+    }).join("");
+  }
+
+  _updateBadges() {
+    const badgesEl = this.shadowRoot.getElementById("cc-badges");
+    if (!badgesEl || !this._hass) return;
+    const badges = this._config?.headerBadges || [];
+    Array.from(badgesEl.children).forEach((badge, i) => {
+      const entityId = badge.dataset.entity;
+      if (!entityId) return;
+      const state = this._hass.states?.[entityId];
+      if (!state) return;
+      const val  = state.state;
+      const unit = state.attributes?.unit_of_measurement || "";
+      const valEl = badge.querySelector(".badge-value");
+      if (valEl) valEl.textContent = val + unit;
+    });
+  }
+
   // ── Settings drawer ───────────────────────────────────────────────────
 
   _renderDrawer() {
@@ -1384,9 +1536,88 @@ class CoupleCalendarPanel extends HTMLElement {
           </div>
         </div>
 
+        <div class="settings-section">
+          <div class="settings-section-title">Kiosk Mode</div>
+          <div class="settings-row">
+            <label>Enable kiosk mode</label>
+            <input type="checkbox" id="s-kiosk" ${cfg.kioskMode?"checked":""} style="width:20px;height:20px;cursor:pointer;accent-color:${firstColor};">
+          </div>
+          <div id="s-kiosk-options" style="${cfg.kioskMode?"":"display:none"}">
+            <div class="settings-section-title" style="margin-top:8px;font-size:10px;">HEADER BADGES <span style="font-weight:400;font-style:italic;opacity:0.7">— replaces clock (add sensor.time for a time badge)</span></div>
+            <div id="s-badges-list">
+              ${(cfg.headerBadges||[]).map((id,i) => `
+                <div class="settings-row" style="margin-bottom:8px;">
+                  <input type="text" class="badge-entity-input" value="${id}" placeholder="e.g. weather.home" style="flex:1;">
+                  <button class="cal-delete-btn" data-badge-idx="${i}">${ICON.close}</button>
+                </div>`).join("")}
+            </div>
+            <button class="add-cal-btn" id="s-add-badge" style="margin-bottom:16px;">+ Add Badge Entity</button>
+
+            <div class="settings-section-title" style="font-size:10px;">SIDEBAR CARDS <span style="font-weight:400;font-style:italic;opacity:0.7">— any Lovelace card type</span></div>
+            <div id="s-cards-list">
+              ${(cfg.sidebarCards||[]).map((card,i) => `
+                <div class="cal-card" data-card-idx="${i}" style="margin-bottom:10px;">
+                  <div class="cal-card-header">
+                    <input type="text" class="cal-name-input card-type-input" value="${card.type||""}" placeholder="Card type (e.g. weather-forecast)">
+                    <button class="cal-delete-btn" data-card-idx="${i}">${ICON.close}</button>
+                  </div>
+                  <div class="cal-card-color-label" style="margin-top:8px;">Config JSON (optional extra options)</div>
+                  <textarea class="card-config-input" rows="3" style="width:100%;margin-top:6px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.05);color:inherit;font-size:12px;font-family:monospace;resize:vertical;">${JSON.stringify(card, null, 2)}</textarea>
+                </div>`).join("")}
+            </div>
+            <button class="add-cal-btn" id="s-add-card">+ Add Sidebar Card</button>
+          </div>
+        </div>
+
         <button class="save-btn" id="cc-save-settings" style="background:${firstColor};">Save Changes</button>
       </div>
     `;
+
+    // Kiosk toggle shows/hides the kiosk options section
+    el.querySelector("#s-kiosk")?.addEventListener("change", e => {
+      const opts = el.querySelector("#s-kiosk-options");
+      if (opts) opts.style.display = e.target.checked ? "" : "none";
+    });
+
+    // Add badge entity row
+    el.querySelector("#s-add-badge")?.addEventListener("click", () => {
+      const list = el.querySelector("#s-badges-list");
+      if (!list) return;
+      const idx = list.children.length;
+      const row = document.createElement("div");
+      row.className = "settings-row";
+      row.style.marginBottom = "8px";
+      row.innerHTML = `<input type="text" class="badge-entity-input" placeholder="e.g. sensor.time" style="flex:1;">
+        <button class="cal-delete-btn" data-badge-idx="${idx}">${ICON.close}</button>`;
+      list.appendChild(row);
+      row.querySelector(".cal-delete-btn").addEventListener("click", () => row.remove());
+    });
+    el.querySelectorAll("[data-badge-idx]").forEach(btn =>
+      btn.addEventListener("click", () => btn.closest(".settings-row")?.remove())
+    );
+
+    // Add sidebar card
+    el.querySelector("#s-add-card")?.addEventListener("click", () => {
+      const list = el.querySelector("#s-cards-list");
+      if (!list) return;
+      const idx = list.children.length;
+      const div = document.createElement("div");
+      div.className = "cal-card";
+      div.dataset.cardIdx = idx;
+      div.style.marginBottom = "10px";
+      div.innerHTML = `
+        <div class="cal-card-header">
+          <input type="text" class="cal-name-input card-type-input" placeholder="Card type (e.g. weather-forecast)">
+          <button class="cal-delete-btn">${ICON.close}</button>
+        </div>
+        <div class="cal-card-color-label" style="margin-top:8px;">Config JSON</div>
+        <textarea class="card-config-input" rows="3" style="width:100%;margin-top:6px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.05);color:inherit;font-size:12px;font-family:monospace;resize:vertical;">{\n  "type": ""\n}</textarea>`;
+      list.appendChild(div);
+      div.querySelector(".cal-delete-btn").addEventListener("click", () => div.remove());
+    });
+    el.querySelectorAll("[data-card-idx] .cal-delete-btn").forEach(btn =>
+      btn.addEventListener("click", () => btn.closest(".cal-card")?.remove())
+    );
 
     // Color swatch selection per calendar card
     el.querySelectorAll(".cal-colors").forEach(row => {
@@ -1449,12 +1680,31 @@ class CoupleCalendarPanel extends HTMLElement {
       return { ...cal, name, color, entities };
     });
 
+    // Kiosk mode settings
+    const kioskMode = dr.querySelector("#s-kiosk")?.checked ?? false;
+    const headerBadges = Array.from(dr.querySelectorAll(".badge-entity-input"))
+      .map(i => i.value.trim()).filter(Boolean);
+    const sidebarCards = Array.from(dr.querySelectorAll(".cal-card[data-card-idx]"))
+      .map(card => {
+        const typeInput = card.querySelector(".card-type-input")?.value?.trim();
+        const jsonInput = card.querySelector(".card-config-input")?.value?.trim();
+        try {
+          const parsed = jsonInput ? JSON.parse(jsonInput) : {};
+          return typeInput ? { type: typeInput, ...parsed } : parsed.type ? parsed : null;
+        } catch (_) {
+          return typeInput ? { type: typeInput } : null;
+        }
+      }).filter(Boolean);
+
     // Display preferences stay in localStorage
     const displayPatch = {
       theme:          dr.querySelector("#s-theme")?.value,
       timeFormat:     dr.querySelector("#s-time")?.value,
       firstDayOfWeek: dr.querySelector("#s-fdow")?.value ?? 0,
       defaultView:    dr.querySelector("#s-default-view")?.value,
+      kioskMode,
+      headerBadges,
+      sidebarCards,
     };
 
     // Save calendars: try WebSocket (persists to HA), fall back to localStorage
