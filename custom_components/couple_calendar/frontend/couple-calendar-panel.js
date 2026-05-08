@@ -178,6 +178,7 @@ function buildStyles(cfg) {
   .kiosk-mode .kiosk-sidebar {
     width: var(--fc-sidebar-width, 300px); overflow-y: auto; padding: 14px 12px;
   }
+  .kiosk-sidebar > * { flex-shrink: 0; flex-grow: 0; }
 
   /* ── Header badges (center slot in kiosk mode) ── */
   .header-badges { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
