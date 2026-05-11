@@ -193,6 +193,8 @@ function buildStyles(cfg) {
   .badge-text   { display: flex; flex-direction: column; }
   .badge-label  { font-size: 11px; color: ${p.textSub}; white-space: nowrap; line-height: 1.2; }
   .badge-value  { font-size: 14px; font-weight: 700; white-space: nowrap; line-height: 1.25; }
+  /* Wrapper for full custom-element badges (Mushroom chips etc.) */
+  .badge-card-wrapper { flex-shrink: 0; display: flex; align-items: center; }
 
   /* ── Month grid ── */
   .month-view { display: flex; flex-direction: column; height: 100%; }
@@ -914,10 +916,12 @@ class CoupleCalendarPanel extends HTMLElement {
     this.shadowRoot.appendChild(root);
 
     this._sidebarCardEls = [];
+    this._badgeCardEls   = [];
     this._bindStaticEvents();
     this._renderHeader();
     this._renderLegend();
     this._renderMainContent();
+    this._renderBadges().catch(() => {});
     this._renderSidebar().catch(() => {});
     this._renderDrawer();
   }
@@ -942,7 +946,7 @@ class CoupleCalendarPanel extends HTMLElement {
       </div>
 
       ${this._config?.kioskMode && (this._config?.headerBadges?.length)
-        ? `<div class="header-badges" id="cc-badges">${this._renderBadgesHTML()}</div>`
+        ? `<div class="header-badges" id="cc-badges"></div>`
         : `<div class="header-clock">
              <div class="header-clock-time" id="cc-clock-time"></div>
              <div class="header-clock-date" id="cc-clock-date"></div>
@@ -1487,33 +1491,83 @@ class CoupleCalendarPanel extends HTMLElement {
     return "rgba(255,255,255,0.8)";
   }
 
-  _renderBadgesHTML() {
+  async _renderBadges() {
+    const el = this.shadowRoot.getElementById("cc-badges");
+    if (!el) return;
+    el.innerHTML = "";
+    this._badgeCardEls = [];
+
     const badges = this._config?.headerBadges || [];
-    if (!badges.length) return "";
-    return badges.map(badge => {
-      const entityId = this._badgeEntity(badge);
-      const state    = this._hass?.states?.[entityId];
-      const label    = this._badgeLabel(badge, state);
-      const icon     = this._entityIcon(state || { entity_id: entityId });
-      const color    = this._stateColor(state);
-      const val      = state ? state.state + (state.attributes?.unit_of_measurement || "") : "—";
-      return `<div class="badge" data-entity="${entityId}">
-        <ha-icon icon="${icon}" style="color:${color};"></ha-icon>
-        <div class="badge-text">
-          <div class="badge-label">${label}</div>
-          <div class="badge-value">${val}</div>
-        </div>
-      </div>`;
-    }).join("");
+    if (!badges.length) return;
+
+    // Pre-load Lovelace resources if any badge is a custom card type
+    if (badges.some(b => typeof b === "object" && b.type?.startsWith("custom:"))) {
+      await this._loadLovelaceResources();
+    }
+    if (!this._mounted) return;
+
+    for (const badge of badges) {
+      const haType = typeof badge === "object" ? badge.type : null;
+
+      if (haType) {
+        // Render as an actual custom element (Mushroom chips, etc.)
+        const isCustom    = haType.startsWith("custom:");
+        const elementName = isCustom ? haType.slice(7) : `hui-${haType}-card`;
+
+        if (!customElements.get(elementName)) {
+          await Promise.race([
+            customElements.whenDefined(elementName),
+            new Promise(r => setTimeout(r, 8_000)),
+          ]);
+        }
+
+        if (!customElements.get(elementName)) {
+          el.insertAdjacentHTML("beforeend",
+            `<div class="badge"><div class="badge-value" style="color:#f87171;font-size:12px;">${haType} not loaded</div></div>`);
+          continue;
+        }
+
+        const cardEl = document.createElement(elementName);
+        try {
+          if (typeof cardEl.setConfig === "function") cardEl.setConfig(badge);
+        } catch (e) {
+          el.insertAdjacentHTML("beforeend",
+            `<div class="badge"><div class="badge-value" style="color:#f87171;font-size:12px;">${e.message}</div></div>`);
+          continue;
+        }
+        cardEl.hass = this._hass;
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "badge-card-wrapper";
+        wrapper.appendChild(cardEl);
+        el.appendChild(wrapper);
+        this._badgeCardEls.push(cardEl);
+      } else {
+        // Render as compact entity badge (icon + label + value)
+        const entityId = this._badgeEntity(badge);
+        const state    = this._hass?.states?.[entityId];
+        const label    = this._badgeLabel(badge, state);
+        const icon     = this._entityIcon(state || { entity_id: entityId });
+        const color    = this._stateColor(state);
+        const val      = state ? state.state + (state.attributes?.unit_of_measurement || "") : "—";
+        el.insertAdjacentHTML("beforeend",
+          `<div class="badge" data-entity="${entityId}">
+            <ha-icon icon="${icon}" style="color:${color};"></ha-icon>
+            <div class="badge-text">
+              <div class="badge-label">${label}</div>
+              <div class="badge-value">${val}</div>
+            </div>
+          </div>`);
+      }
+    }
   }
 
   _updateBadges() {
     const badgesEl = this.shadowRoot.getElementById("cc-badges");
     if (!badgesEl || !this._hass) return;
-    Array.from(badgesEl.children).forEach(badge => {
-      const entityId = badge.dataset.entity;
-      if (!entityId) return;
-      const state = this._hass.states?.[entityId];
+    // Update entity badges in-place
+    badgesEl.querySelectorAll(".badge[data-entity]").forEach(badge => {
+      const state = this._hass.states?.[badge.dataset.entity];
       if (!state) return;
       const val = state.state + (state.attributes?.unit_of_measurement || "");
       const valEl  = badge.querySelector(".badge-value");
@@ -1524,6 +1578,10 @@ class CoupleCalendarPanel extends HTMLElement {
         iconEl.style.color = this._stateColor(state);
       }
     });
+    // Pass updated hass to custom card badge elements
+    for (const cardEl of (this._badgeCardEls || [])) {
+      try { cardEl.hass = this._hass; } catch (_) {}
+    }
   }
 
   // ── Settings drawer ───────────────────────────────────────────────────
