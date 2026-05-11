@@ -1450,19 +1450,33 @@ class CoupleCalendarPanel extends HTMLElement {
 
   // ── Header badges ────────────────────────────────────────────────────
 
+  // Normalise a badge entry — supports legacy plain entity-ID strings
+  // as well as new config objects (same YAML format as sidebar cards).
+  _badgeEntity(badge) {
+    if (typeof badge === "string") return badge;
+    return badge?.entity || "";
+  }
+  _badgeLabel(badge, state) {
+    // Explicit name in config wins, then friendly_name, then entity slug
+    if (typeof badge === "object" && badge.name) return badge.name;
+    const entityId = this._badgeEntity(badge);
+    return (state?.attributes?.friendly_name || entityId)
+      .replace(/^[^.]+\./, "").replace(/_/g, " ");
+  }
+
   _renderBadgesHTML() {
     const badges = this._config?.headerBadges || [];
     if (!badges.length) return "";
-    return badges.map(entityId => {
-      const state = this._hass?.states?.[entityId];
-      if (!state) return `<div class="badge"><div class="badge-value">—</div><div class="badge-label">${entityId.split(".")[1]?.replace(/_/g," ") || entityId}</div></div>`;
-      const val   = state.state;
-      const attrs = state.attributes;
-      const unit  = attrs.unit_of_measurement || "";
-      const name  = (attrs.friendly_name || entityId).replace(/^[^.]+\./, "").replace(/_/g," ");
+    return badges.map(badge => {
+      const entityId = this._badgeEntity(badge);
+      const state    = this._hass?.states?.[entityId];
+      const label    = this._badgeLabel(badge, state);
+      if (!state) return `<div class="badge"><div class="badge-value">—</div><div class="badge-label">${label}</div></div>`;
+      const val  = state.state;
+      const unit = state.attributes?.unit_of_measurement || "";
       return `<div class="badge" data-entity="${entityId}">
         <div class="badge-value">${val}${unit}</div>
-        <div class="badge-label">${name}</div>
+        <div class="badge-label">${label}</div>
       </div>`;
     }).join("");
   }
@@ -1470,8 +1484,7 @@ class CoupleCalendarPanel extends HTMLElement {
   _updateBadges() {
     const badgesEl = this.shadowRoot.getElementById("cc-badges");
     if (!badgesEl || !this._hass) return;
-    const badges = this._config?.headerBadges || [];
-    Array.from(badgesEl.children).forEach((badge, i) => {
+    Array.from(badgesEl.children).forEach(badge => {
       const entityId = badge.dataset.entity;
       if (!entityId) return;
       const state = this._hass.states?.[entityId];
@@ -1584,15 +1597,18 @@ class CoupleCalendarPanel extends HTMLElement {
               <input type="number" id="s-sidebar-width" value="${cfg.sidebarWidth ?? 300}" min="100" max="800" step="10"
                 style="width:80px;padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:inherit;font-size:14px;text-align:center;">
             </div>
-            <div class="settings-section-title" style="margin-top:8px;font-size:10px;">HEADER BADGES <span style="font-weight:400;font-style:italic;opacity:0.7">— replaces clock (add sensor.time for a time badge)</span></div>
+            <div class="settings-section-title" style="margin-top:8px;font-size:10px;">HEADER BADGES <span style="font-weight:400;font-style:italic;opacity:0.7">— paste YAML from your dashboard (entity: is required)</span></div>
             <div id="s-badges-list">
-              ${(cfg.headerBadges||[]).map((id,i) => `
-                <div class="settings-row" style="margin-bottom:8px;">
-                  <input type="text" class="badge-entity-input" value="${id}" placeholder="e.g. weather.home" style="flex:1;">
-                  <button class="cal-delete-btn" data-badge-idx="${i}">${ICON.close}</button>
+              ${(cfg.headerBadges||[]).map((badge,i) => `
+                <div class="cal-card" data-badge-idx="${i}" style="margin-bottom:8px;">
+                  <div class="cal-card-header" style="margin-bottom:4px;">
+                    <span style="font-size:12px;font-weight:700;opacity:0.6;flex:1;">${this._badgeEntity(badge)||"badge"}</span>
+                    <button class="cal-delete-btn" data-badge-idx="${i}">${ICON.close}</button>
+                  </div>
+                  <textarea class="badge-config-input" rows="3" style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.05);color:inherit;font-size:12px;font-family:monospace;resize:vertical;" placeholder="entity: sensor.time&#10;name: Time">${this._badgeToYaml(badge)}</textarea>
                 </div>`).join("")}
             </div>
-            <button class="add-cal-btn" id="s-add-badge" style="margin-bottom:16px;">+ Add Badge Entity</button>
+            <button class="add-cal-btn" id="s-add-badge" style="margin-bottom:16px;">+ Add Badge</button>
 
             <div class="settings-section-title" style="font-size:10px;">SIDEBAR CARDS <span style="font-weight:400;font-style:italic;opacity:0.7">— paste YAML directly from your dashboard card editor</span></div>
             <div id="s-cards-list">
@@ -1623,21 +1639,26 @@ class CoupleCalendarPanel extends HTMLElement {
       if (opts) opts.style.display = e.target.checked ? "" : "none";
     });
 
-    // Add badge entity row
+    // Add badge
     el.querySelector("#s-add-badge")?.addEventListener("click", () => {
       const list = el.querySelector("#s-badges-list");
       if (!list) return;
       const idx = list.children.length;
-      const row = document.createElement("div");
-      row.className = "settings-row";
-      row.style.marginBottom = "8px";
-      row.innerHTML = `<input type="text" class="badge-entity-input" placeholder="e.g. sensor.time" style="flex:1;">
-        <button class="cal-delete-btn" data-badge-idx="${idx}">${ICON.close}</button>`;
-      list.appendChild(row);
-      row.querySelector(".cal-delete-btn").addEventListener("click", () => row.remove());
+      const div = document.createElement("div");
+      div.className = "cal-card";
+      div.dataset.badgeIdx = idx;
+      div.style.marginBottom = "8px";
+      div.innerHTML = `
+        <div class="cal-card-header" style="margin-bottom:4px;">
+          <span style="font-size:12px;font-weight:700;opacity:0.6;flex:1;">badge</span>
+          <button class="cal-delete-btn">${ICON.close}</button>
+        </div>
+        <textarea class="badge-config-input" rows="3" style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.05);color:inherit;font-size:12px;font-family:monospace;resize:vertical;" placeholder="entity: sensor.time&#10;name: Time"></textarea>`;
+      list.appendChild(div);
+      div.querySelector(".cal-delete-btn").addEventListener("click", () => div.remove());
     });
-    el.querySelectorAll("[data-badge-idx]").forEach(btn =>
-      btn.addEventListener("click", () => btn.closest(".settings-row")?.remove())
+    el.querySelectorAll(".cal-card[data-badge-idx] .cal-delete-btn").forEach(btn =>
+      btn.addEventListener("click", () => btn.closest(".cal-card")?.remove())
     );
 
     // Add sidebar card
@@ -1754,11 +1775,24 @@ class CoupleCalendarPanel extends HTMLElement {
       return { ...cal, name, color, entities };
     });
 
-    // Kiosk mode settings
+    // Sidebar settings
     const kioskMode = dr.querySelector("#s-kiosk")?.checked ?? false;
-    const headerBadges = Array.from(dr.querySelectorAll(".badge-entity-input"))
-      .map(i => i.value.trim()).filter(Boolean);
     const yaml = await this._loadYaml();
+    const headerBadges = Array.from(dr.querySelectorAll(".cal-card[data-badge-idx] .badge-config-input"))
+      .map(ta => {
+        const text = ta.value.trim();
+        if (!text) return null;
+        try {
+          const parsed = yaml ? yaml.load(text) : null;
+          // Accept object with entity key, or fall back to treating plain text as entity ID
+          if (parsed && typeof parsed === "object" && parsed.entity) return parsed;
+          if (!parsed && text && !text.includes("\n") && !text.includes(":")) return text; // plain entity ID
+          return null;
+        } catch (e) {
+          console.warn("[FamilyCalendar] Could not parse badge config:", e.message);
+          return null;
+        }
+      }).filter(Boolean);
     const sidebarCards = Array.from(dr.querySelectorAll(".cal-card[data-card-idx]"))
       .map(card => {
         const text = card.querySelector(".card-config-input")?.value?.trim();
@@ -1927,6 +1961,13 @@ class CoupleCalendarPanel extends HTMLElement {
 
   // Convert a card config object back to YAML for display in the textarea.
   // Simple custom serialiser so we don't need js-yaml just to open the drawer.
+  _badgeToYaml(badge) {
+    // Convert stored badge (string or object) back to YAML for the settings textarea
+    if (typeof badge === "string") return `entity: ${badge}`;
+    if (!badge || typeof badge !== "object") return "";
+    return this._cardToYaml(badge);
+  }
+
   _cardToYaml(obj, indent = 0) {
     if (!obj || typeof obj !== "object") return String(obj ?? "");
     const pad = "  ".repeat(indent);
