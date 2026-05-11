@@ -169,18 +169,29 @@ function buildStyles(cfg) {
   /* ── Kiosk sidebar — full height, sits to the left of everything ── */
   .kiosk-sidebar {
     width: 0; flex-shrink: 0; overflow: hidden;
-    display: flex; flex-direction: column; gap: 12px;
+    display: flex; flex-direction: column;
     background: ${p.surface}; border-right: 1px solid ${p.border};
     transition: width 0.3s cubic-bezier(0.4,0,0.2,1);
-    scrollbar-width: none;
   }
-  .kiosk-sidebar::-webkit-scrollbar { display: none; }
-  .kiosk-mode .kiosk-sidebar {
-    width: var(--fc-sidebar-width, 300px); overflow-y: auto; padding: 14px 12px;
+  .kiosk-mode .kiosk-sidebar { width: var(--fc-sidebar-width, 300px); }
+  /* Badge area — fixed at top of sidebar, does not scroll */
+  .sidebar-badges-wrap {
+    flex-shrink: 0; padding: 14px 12px 10px;
+    display: flex; flex-wrap: wrap; justify-content: center;
+    align-items: center; gap: 8px;
+    border-bottom: 1px solid ${p.border};
   }
-  .kiosk-sidebar > * { flex-shrink: 0; flex-grow: 0; width: 100%; height: auto !important; }
+  .sidebar-badges-wrap:empty { display: none; }
+  /* Cards area — scrolls independently below the badges */
+  .sidebar-cards {
+    flex: 1; overflow-y: auto; scrollbar-width: none;
+    display: flex; flex-direction: column; gap: 12px;
+    padding: 12px;
+  }
+  .sidebar-cards::-webkit-scrollbar { display: none; }
+  .sidebar-cards > * { flex-shrink: 0; flex-grow: 0; width: 100%; height: auto !important; }
 
-  /* ── Header badges (center slot in kiosk mode) ── */
+  /* ── Header badges (kept for selector compatibility) ── */
   .header-badges { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
   .badge {
     display: flex; flex-direction: row; align-items: center; gap: 8px;
@@ -898,7 +909,10 @@ class CoupleCalendarPanel extends HTMLElement {
     root.className = `panel-root${this._config?.kioskMode ? " kiosk-mode" : ""}`;
     root.style.setProperty("--fc-sidebar-width", `${this._config?.sidebarWidth ?? 300}px`);
     root.innerHTML = `
-      <div class="kiosk-sidebar"  id="cc-sidebar"></div>
+      <div class="kiosk-sidebar">
+        <div class="sidebar-badges-wrap" id="cc-badges"></div>
+        <div class="sidebar-cards"       id="cc-sidebar"></div>
+      </div>
       <div class="panel-right">
         <div class="header"       id="cc-header"></div>
         <div class="legend"       id="cc-legend"></div>
@@ -945,13 +959,6 @@ class CoupleCalendarPanel extends HTMLElement {
         <button class="today-btn" id="cc-today-btn">Today</button>
       </div>
 
-      ${this._config?.kioskMode && (this._config?.headerBadges?.length)
-        ? `<div class="header-badges" id="cc-badges"></div>`
-        : `<div class="header-clock">
-             <div class="header-clock-time" id="cc-clock-time"></div>
-             <div class="header-clock-date" id="cc-clock-date"></div>
-           </div>`
-      }
 
       <div class="header-right">
         <div class="view-switcher">
