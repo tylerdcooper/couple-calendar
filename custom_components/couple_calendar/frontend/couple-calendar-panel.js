@@ -189,7 +189,7 @@ function buildStyles(cfg) {
     transition: background 0.15s;
   }
   .badge:active { background: ${p.surfaceHov}; }
-  .badge ha-icon { --mdc-icon-size: 22px; flex-shrink: 0; }
+  .badge ha-icon { --mdc-icon-size: 22px; flex-shrink: 0; color: var(--fc-badge-icon-color, currentColor); }
   .badge-text   { display: flex; flex-direction: column; }
   .badge-label  { font-size: 11px; color: ${p.textSub}; white-space: nowrap; line-height: 1.2; }
   .badge-value  { font-size: 14px; font-weight: 700; white-space: nowrap; line-height: 1.25; }
@@ -1484,8 +1484,19 @@ class CoupleCalendarPanel extends HTMLElement {
 
   _stateColor(state) {
     const s = state?.state;
-    const ON  = ["on","open","home","unlocked","playing","active","running","cleaning","motion","detected"];
-    const OFF = ["off","closed","away","locked","idle","standby","not_home","clear","no_motion"];
+    if (!s || s === "unavailable" || s === "unknown") return "rgba(255,255,255,0.2)";
+    // Numeric sensor readings → neutral (not active/inactive)
+    if (!isNaN(parseFloat(s))) return "rgba(255,255,255,0.8)";
+    const ON = [
+      "on","open","opening","closing","home","unlocked","playing","active","running",
+      "cleaning","motion","detected","heat","cool","heat_cool","auto","dry","fan_only",
+      "armed_home","armed_away","armed_night","armed_vacation","paused","buffering",
+      "recording","vibration","problem","update","above_horizon",
+    ];
+    const OFF = [
+      "off","closed","away","locked","idle","standby","not_home","clear","no_motion",
+      "disarmed","stopped","below_horizon","not_home",
+    ];
     if (ON.includes(s))  return "#FFD600";
     if (OFF.includes(s)) return "rgba(255,255,255,0.35)";
     return "rgba(255,255,255,0.8)";
@@ -1508,11 +1519,14 @@ class CoupleCalendarPanel extends HTMLElement {
 
     for (const badge of badges) {
       const haType = typeof badge === "object" ? badge.type : null;
+      // Only render as a card element for custom: prefix types.
+      // Built-in types like "entity", "tile", "button" would render as
+      // full-size cards — instead we extract the entity and use our compact pill.
+      const isCustomType = haType?.startsWith("custom:");
 
-      if (haType) {
+      if (isCustomType) {
         // Render as an actual custom element (Mushroom chips, etc.)
-        const isCustom    = haType.startsWith("custom:");
-        const elementName = isCustom ? haType.slice(7) : `hui-${haType}-card`;
+        const elementName = haType.slice(7);
 
         if (!customElements.get(elementName)) {
           await Promise.race([
@@ -1543,7 +1557,9 @@ class CoupleCalendarPanel extends HTMLElement {
         el.appendChild(wrapper);
         this._badgeCardEls.push(cardEl);
       } else {
-        // Render as compact entity badge (icon + label + value)
+        // Render as compact entity badge (icon + label + value).
+        // Handles both plain entity-ID strings and built-in typed configs
+        // (type: entity, type: tile, etc.) by extracting the entity key.
         const entityId = this._badgeEntity(badge);
         const state    = this._hass?.states?.[entityId];
         const label    = this._badgeLabel(badge, state);
@@ -1551,8 +1567,8 @@ class CoupleCalendarPanel extends HTMLElement {
         const color    = this._stateColor(state);
         const val      = state ? state.state + (state.attributes?.unit_of_measurement || "") : "—";
         el.insertAdjacentHTML("beforeend",
-          `<div class="badge" data-entity="${entityId}">
-            <ha-icon icon="${icon}" style="color:${color};"></ha-icon>
+          `<div class="badge" data-entity="${entityId}" style="--fc-badge-icon-color:${color};">
+            <ha-icon icon="${icon}"></ha-icon>
             <div class="badge-text">
               <div class="badge-label">${label}</div>
               <div class="badge-value">${val}</div>
@@ -1569,14 +1585,13 @@ class CoupleCalendarPanel extends HTMLElement {
     badgesEl.querySelectorAll(".badge[data-entity]").forEach(badge => {
       const state = this._hass.states?.[badge.dataset.entity];
       if (!state) return;
-      const val = state.state + (state.attributes?.unit_of_measurement || "");
+      const val   = state.state + (state.attributes?.unit_of_measurement || "");
+      const color = this._stateColor(state);
       const valEl  = badge.querySelector(".badge-value");
       const iconEl = badge.querySelector("ha-icon");
       if (valEl)  valEl.textContent = val;
-      if (iconEl) {
-        iconEl.setAttribute("icon", this._entityIcon(state));
-        iconEl.style.color = this._stateColor(state);
-      }
+      if (iconEl) iconEl.setAttribute("icon", this._entityIcon(state));
+      badge.style.setProperty("--fc-badge-icon-color", color);
     });
     // Pass updated hass to custom card badge elements
     for (const cardEl of (this._badgeCardEls || [])) {
