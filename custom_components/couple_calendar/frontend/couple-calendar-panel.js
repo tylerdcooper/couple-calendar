@@ -959,6 +959,7 @@ class CoupleCalendarPanel extends HTMLElement {
         <button class="today-btn" id="cc-today-btn">Today</button>
       </div>
 
+      <div></div>
 
       <div class="header-right">
         <div class="view-switcher">
