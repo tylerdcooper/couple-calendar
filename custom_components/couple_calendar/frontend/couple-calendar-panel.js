@@ -181,16 +181,18 @@ function buildStyles(cfg) {
   .kiosk-sidebar > * { flex-shrink: 0; flex-grow: 0; width: 100%; height: auto !important; }
 
   /* ── Header badges (center slot in kiosk mode) ── */
-  .header-badges { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
+  .header-badges { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
   .badge {
-    display: flex; flex-direction: column; align-items: center;
-    padding: 5px 12px; border-radius: 12px;
-    background: ${p.surfaceAlt}; cursor: pointer; min-width: 64px;
+    display: flex; flex-direction: row; align-items: center; gap: 8px;
+    padding: 6px 14px 6px 10px; border-radius: 999px;
+    background: ${p.surfaceAlt}; cursor: pointer;
     transition: background 0.15s;
   }
   .badge:active { background: ${p.surfaceHov}; }
-  .badge-value  { font-size: 16px; font-weight: 700; line-height: 1.15; white-space: nowrap; }
-  .badge-label  { font-size: 11px; color: ${p.textSub}; margin-top: 1px; white-space: nowrap; }
+  .badge ha-icon { --mdc-icon-size: 22px; flex-shrink: 0; }
+  .badge-text   { display: flex; flex-direction: column; }
+  .badge-label  { font-size: 11px; color: ${p.textSub}; white-space: nowrap; line-height: 1.2; }
+  .badge-value  { font-size: 14px; font-weight: 700; white-space: nowrap; line-height: 1.25; }
 
   /* ── Month grid ── */
   .month-view { display: flex; flex-direction: column; height: 100%; }
@@ -1450,18 +1452,39 @@ class CoupleCalendarPanel extends HTMLElement {
 
   // ── Header badges ────────────────────────────────────────────────────
 
-  // Normalise a badge entry — supports legacy plain entity-ID strings
-  // as well as new config objects (same YAML format as sidebar cards).
   _badgeEntity(badge) {
-    if (typeof badge === "string") return badge;
-    return badge?.entity || "";
+    return typeof badge === "string" ? badge : (badge?.entity || "");
   }
   _badgeLabel(badge, state) {
-    // Explicit name in config wins, then friendly_name, then entity slug
     if (typeof badge === "object" && badge.name) return badge.name;
     const entityId = this._badgeEntity(badge);
     return (state?.attributes?.friendly_name || entityId)
       .replace(/^[^.]+\./, "").replace(/_/g, " ");
+  }
+
+  _entityIcon(state) {
+    if (state?.attributes?.icon) return state.attributes.icon;
+    const domain = state?.entity_id?.split(".")[0] || "";
+    return ({
+      cover: "mdi:window-shutter", sensor: "mdi:information-outline",
+      binary_sensor: "mdi:checkbox-blank-circle-outline",
+      switch: "mdi:toggle-switch-off", light: "mdi:lightbulb",
+      climate: "mdi:thermostat", weather: "mdi:weather-partly-cloudy",
+      person: "mdi:account", fan: "mdi:fan", lock: "mdi:lock",
+      humidifier: "mdi:air-humidifier", media_player: "mdi:speaker",
+      vacuum: "mdi:robot-vacuum", alarm_control_panel: "mdi:shield-home",
+      input_boolean: "mdi:toggle-switch-off", automation: "mdi:robot",
+      device_tracker: "mdi:crosshairs-gps",
+    })[domain] || "mdi:circle-outline";
+  }
+
+  _stateColor(state) {
+    const s = state?.state;
+    const ON  = ["on","open","home","unlocked","playing","active","running","cleaning","motion","detected"];
+    const OFF = ["off","closed","away","locked","idle","standby","not_home","clear","no_motion"];
+    if (ON.includes(s))  return "#FFD600";
+    if (OFF.includes(s)) return "rgba(255,255,255,0.35)";
+    return "rgba(255,255,255,0.8)";
   }
 
   _renderBadgesHTML() {
@@ -1471,12 +1494,15 @@ class CoupleCalendarPanel extends HTMLElement {
       const entityId = this._badgeEntity(badge);
       const state    = this._hass?.states?.[entityId];
       const label    = this._badgeLabel(badge, state);
-      if (!state) return `<div class="badge"><div class="badge-value">—</div><div class="badge-label">${label}</div></div>`;
-      const val  = state.state;
-      const unit = state.attributes?.unit_of_measurement || "";
+      const icon     = this._entityIcon(state || { entity_id: entityId });
+      const color    = this._stateColor(state);
+      const val      = state ? state.state + (state.attributes?.unit_of_measurement || "") : "—";
       return `<div class="badge" data-entity="${entityId}">
-        <div class="badge-value">${val}${unit}</div>
-        <div class="badge-label">${label}</div>
+        <ha-icon icon="${icon}" style="color:${color};"></ha-icon>
+        <div class="badge-text">
+          <div class="badge-label">${label}</div>
+          <div class="badge-value">${val}</div>
+        </div>
       </div>`;
     }).join("");
   }
@@ -1489,10 +1515,14 @@ class CoupleCalendarPanel extends HTMLElement {
       if (!entityId) return;
       const state = this._hass.states?.[entityId];
       if (!state) return;
-      const val  = state.state;
-      const unit = state.attributes?.unit_of_measurement || "";
-      const valEl = badge.querySelector(".badge-value");
-      if (valEl) valEl.textContent = val + unit;
+      const val = state.state + (state.attributes?.unit_of_measurement || "");
+      const valEl  = badge.querySelector(".badge-value");
+      const iconEl = badge.querySelector("ha-icon");
+      if (valEl)  valEl.textContent = val;
+      if (iconEl) {
+        iconEl.setAttribute("icon", this._entityIcon(state));
+        iconEl.style.color = this._stateColor(state);
+      }
     });
   }
 
