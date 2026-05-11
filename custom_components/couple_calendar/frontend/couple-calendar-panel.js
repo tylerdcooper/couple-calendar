@@ -1709,9 +1709,13 @@ class CoupleCalendarPanel extends HTMLElement {
             </div>
             <div class="settings-section-title" style="margin-top:8px;font-size:10px;">HEADER BADGES <span style="font-weight:400;font-style:italic;opacity:0.7">— paste YAML from your dashboard (entity: is required)</span></div>
             <div id="s-badges-list">
-              ${(cfg.headerBadges||[]).map((badge,i) => `
+              ${(cfg.headerBadges||[]).map((badge,i,arr) => `
                 <div class="cal-card" data-badge-idx="${i}" style="margin-bottom:8px;">
                   <div class="cal-card-header" style="margin-bottom:4px;">
+                    <div style="display:flex;flex-direction:column;gap:2px;margin-right:6px;">
+                      <button class="badge-move-btn" data-badge-idx="${i}" data-dir="-1" ${i===0?"disabled":""} style="background:none;border:none;cursor:pointer;color:#8B949E;padding:0;line-height:1;font-size:14px;">▲</button>
+                      <button class="badge-move-btn" data-badge-idx="${i}" data-dir="1"  ${i===arr.length-1?"disabled":""} style="background:none;border:none;cursor:pointer;color:#8B949E;padding:0;line-height:1;font-size:14px;">▼</button>
+                    </div>
                     <span style="font-size:12px;font-weight:700;opacity:0.6;flex:1;">${this._badgeEntity(badge)||"badge"}</span>
                     <button class="cal-delete-btn" data-badge-idx="${i}">${ICON.close}</button>
                   </div>
@@ -1807,10 +1811,32 @@ class CoupleCalendarPanel extends HTMLElement {
         if (!swapWith) return;
         if (dir === -1) list.insertBefore(card, swapWith);
         else            list.insertBefore(swapWith, card);
-        // Re-number data-card-idx and update disabled states
         Array.from(list.querySelectorAll(".cal-card")).forEach((c, i, arr) => {
           c.dataset.cardIdx = i;
           c.querySelectorAll(".card-move-btn").forEach(b => {
+            b.disabled = (b.dataset.dir === "-1" && i === 0) ||
+                         (b.dataset.dir === "1"  && i === arr.length - 1);
+          });
+        });
+      })
+    );
+
+    el.querySelectorAll(".badge-move-btn").forEach(btn =>
+      btn.addEventListener("click", () => {
+        if (btn.disabled) return;
+        const list = el.querySelector("#s-badges-list");
+        const card = btn.closest(".cal-card");
+        const dir  = parseInt(btn.dataset.dir);
+        if (!list || !card) return;
+        const items = Array.from(list.querySelectorAll(".cal-card"));
+        const idx   = items.indexOf(card);
+        const swapWith = items[idx + dir];
+        if (!swapWith) return;
+        if (dir === -1) list.insertBefore(card, swapWith);
+        else            list.insertBefore(swapWith, card);
+        Array.from(list.querySelectorAll(".cal-card")).forEach((c, i, arr) => {
+          c.dataset.badgeIdx = i;
+          c.querySelectorAll(".badge-move-btn").forEach(b => {
             b.disabled = (b.dataset.dir === "-1" && i === 0) ||
                          (b.dataset.dir === "1"  && i === arr.length - 1);
           });
