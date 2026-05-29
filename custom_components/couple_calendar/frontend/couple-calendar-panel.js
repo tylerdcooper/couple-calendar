@@ -450,6 +450,28 @@ function buildStyles(cfg) {
     font-size: 13px; font-weight: 700;
   }
   .modal-description { font-size: 15px; line-height: 1.7; color: ${p.textSub}; margin-top: 16px; }
+  .ignore-btn {
+    margin-top: 20px; width: 100%;
+    padding: 12px 16px; border-radius: 12px; cursor: pointer;
+    background: ${p.surfaceAlt}; color: ${p.textSub};
+    border: 1px solid ${p.border};
+    font-size: 14px; font-weight: 600;
+    transition: background 0.15s, color 0.15s;
+  }
+  .ignore-btn:hover, .ignore-btn:active { background: ${p.surfaceHov}; color: ${p.text}; }
+  .ignored-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border-radius: 8px;
+    background: ${p.surfaceAlt}; margin-bottom: 6px;
+    font-size: 13px; color: ${p.textSub};
+  }
+  .ignored-row .ignored-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ignored-row .unignore-btn {
+    background: transparent; border: none; cursor: pointer;
+    color: ${p.textSub}; padding: 4px 8px; border-radius: 6px;
+    font-size: 12px; font-weight: 600;
+  }
+  .ignored-row .unignore-btn:hover { background: ${p.surfaceHov}; color: ${p.text}; }
 
   /* ── Animations ── */
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -625,6 +647,7 @@ class CoupleCalendarPanel extends HTMLElement {
       headerBadges: ls.headerBadges  !== undefined ? ls.headerBadges  : (pc.headerBadges  ?? []),
       sidebarCards: ls.sidebarCards  !== undefined ? ls.sidebarCards  : (pc.sidebarCards  ?? []),
       sidebarWidth: ls.sidebarWidth  !== undefined ? ls.sidebarWidth  : (pc.sidebarWidth  ?? 300),
+      ignoredEvents: ls.ignoredEvents !== undefined ? ls.ignoredEvents : (pc.ignoredEvents ?? []),
     };
 
     // Calendars: localStorage (most recent save) → HA panelConfig → migrate v1
@@ -794,9 +817,20 @@ class CoupleCalendarPanel extends HTMLElement {
     return this._calById(who)?.name || "Unknown";
   }
 
+  // Stable per-event key for the ignore list. \x1f is the ASCII unit
+  // separator — it can't appear in summaries or ISO datetimes, so we
+  // don't need to escape anything.
+  _eventKey(ev) {
+    const start = ev?.start?.dateTime || ev?.start?.date || "";
+    return `${ev?._who || ""}\x1f${ev?.summary || ""}\x1f${start}`;
+  }
+
   _filteredEvents() {
-    if (this._activeFilter === "all") return this._events;
-    return this._events.filter(e => e._who === this._activeFilter);
+    const ignored = new Set(this._config?.ignoredEvents || []);
+    const base = this._activeFilter === "all"
+      ? this._events
+      : this._events.filter(e => e._who === this._activeFilter);
+    return ignored.size ? base.filter(e => !ignored.has(this._eventKey(e))) : base;
   }
 
   _eventsOnDay(day) {
@@ -1754,6 +1788,35 @@ class CoupleCalendarPanel extends HTMLElement {
           </div>
         </div>
 
+        ${(cfg.ignoredEvents||[]).length ? `
+        <div class="settings-section">
+          <div class="settings-section-title">Ignored Events <span style="font-weight:400;font-style:italic;opacity:0.7">— hidden from all views, still in Google Calendar</span></div>
+          <div id="s-ignored-list">
+            ${(cfg.ignoredEvents||[]).map(key => {
+              const parts = key.split("\x1f");
+              const who      = this._whoName(parts[0]) || "Calendar";
+              const summary  = parts[1] || "(No title)";
+              const startStr = parts[2] || "";
+              let when = startStr;
+              if (startStr) {
+                const d = new Date(startStr);
+                if (!isNaN(d)) {
+                  when = startStr.length === 10
+                    ? d.toLocaleDateString([], { month:"short", day:"numeric", year:"numeric" })
+                    : d.toLocaleString([], { month:"short", day:"numeric", year:"numeric", hour:"numeric", minute:"2-digit" });
+                }
+              }
+              return `
+                <div class="ignored-row">
+                  <span class="ignored-label" title="${summary} — ${when} — ${who}">
+                    <strong style="color:inherit;">${summary}</strong> · ${when} · ${who}
+                  </span>
+                  <button class="unignore-btn" data-ignore-key="${encodeURIComponent(key)}">Unignore</button>
+                </div>`;
+            }).join("")}
+          </div>
+        </div>` : ""}
+
         <button class="save-btn" id="cc-save-settings" style="background:${firstColor};">Save Changes</button>
       </div>
     `;
@@ -1892,6 +1955,10 @@ class CoupleCalendarPanel extends HTMLElement {
       setTimeout(() => el.querySelector(".drawer-body")?.scrollTo({ top: 99999, behavior: "smooth" }), 50);
     });
 
+    el.querySelectorAll(".unignore-btn").forEach(btn =>
+      btn.addEventListener("click", () => this._unignoreEvent(decodeURIComponent(btn.dataset.ignoreKey)))
+    );
+
     el.querySelector("#cc-drawer-close").addEventListener("click", () => this._closeDrawer());
     el.querySelector("#cc-save-settings").addEventListener("click", () => this._saveSettings());
   }
@@ -1963,6 +2030,7 @@ class CoupleCalendarPanel extends HTMLElement {
       sidebarCards,
       sidebarWidth:   parseInt(dr.querySelector("#s-sidebar-width")?.value, 10) || 300,
       calendars:      updatedCals,
+      ignoredEvents:  this._config?.ignoredEvents || [],
     };
 
     // Always save to localStorage first as an immediate backup
@@ -2018,12 +2086,47 @@ class CoupleCalendarPanel extends HTMLElement {
           <span class="modal-who-badge" style="background:${color}22; color:${color};">${this._whoName(ev._who)}</span>
         </div>
         ${ev.description ? `<div class="modal-description">${ev.description}</div>` : ""}
+        <button class="ignore-btn" id="cc-modal-ignore" title="Hide this event from all views (does not delete it from Google)">
+          Ignore this event
+        </button>
       </div>`;
 
     overlay.classList.add("open");
     modal.classList.add("open");
     modal.querySelector("#cc-modal-close").addEventListener("click", () => this._closeModal());
+    modal.querySelector("#cc-modal-ignore").addEventListener("click", () => this._ignoreEvent(ev));
     overlay.addEventListener("click", evt => { if (evt.target === overlay) this._closeModal(); }, { once: true });
+  }
+
+  async _ignoreEvent(ev) {
+    const key = this._eventKey(ev);
+    const current = this._config?.ignoredEvents || [];
+    if (current.includes(key)) { this._closeModal(); return; }
+    const updated = [...current, key];
+    await this._persistIgnoredEvents(updated);
+    this._closeModal();
+    this._renderMainContent();
+  }
+
+  async _unignoreEvent(key) {
+    const current = this._config?.ignoredEvents || [];
+    const updated = current.filter(k => k !== key);
+    await this._persistIgnoredEvents(updated);
+    this._renderDrawer();
+    this._renderMainContent();
+  }
+
+  async _persistIgnoredEvents(list) {
+    if (this._config) this._config.ignoredEvents = list;
+    this._saveLocalSettings({ ignoredEvents: list });
+    try {
+      await this._hass.callWS({
+        type: "couple_calendar/update_settings",
+        settings: { ignoredEvents: list },
+      });
+    } catch (e) {
+      console.warn("[FamilyCalendar] Could not sync ignored events to HA:", e);
+    }
   }
 
   _closeModal() {

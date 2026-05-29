@@ -28,7 +28,7 @@ JS_FILE = FRONTEND_DIR / "couple-calendar-panel.js"
 # All display/kiosk settings stored in the config entry
 DISPLAY_SETTINGS = [
     "theme", "timeFormat", "firstDayOfWeek", "defaultView",
-    "kioskMode", "headerBadges", "sidebarCards",
+    "kioskMode", "headerBadges", "sidebarCards", "ignoredEvents",
 ]
 
 
@@ -170,6 +170,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "headerBadges": data.get("headerBadges", []),
             "sidebarCards": data.get("sidebarCards", []),
             "sidebarWidth": data.get("sidebarWidth", 300),
+            "ignoredEvents": data.get("ignoredEvents", []),
         },
         require_admin=False,
     )
