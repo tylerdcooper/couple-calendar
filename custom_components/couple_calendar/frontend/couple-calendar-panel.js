@@ -642,6 +642,7 @@ class CoupleCalendarPanel extends HTMLElement {
       timeFormat:     ls.timeFormat  || pc.timeFormat  || "12h",
       defaultView:    ls.defaultView || pc.defaultView || "month",
       theme:          ls.theme       || pc.theme       || "dark",
+      hideDuplicates: ls.hideDuplicates !== undefined ? ls.hideDuplicates : (pc.hideDuplicates ?? true),
       // Sidebar: localStorage (most recent save on this device) → HA config → default
       kioskMode:    ls.kioskMode     !== undefined ? ls.kioskMode     : (pc.kioskMode     ?? false),
       headerBadges: ls.headerBadges  !== undefined ? ls.headerBadges  : (pc.headerBadges  ?? []),
@@ -685,25 +686,18 @@ class CoupleCalendarPanel extends HTMLElement {
 
   // ── Data ───────────────────────────────────────────────────────────────
 
-  // Skip re-polling Google if data was fetched within this window
-  static get STALE_MS() { return 2 * 60 * 1000; } // 2 minutes
-
   async _fetchEvents(showSpinner = true) {
     if (!this._hass || !this._config) return;
     if (showSpinner) { this._loading = true; this._renderMainContent(); }
 
     const { start, end } = this._fetchRange();
     const entities  = this._calendarEntities();
-    const uniqueIds = [...new Set(entities.map(e => e.entityId).filter(Boolean))];
 
-    // Only re-poll Google when data is stale — skips the wait on quick view switches
-    const dataIsStale = !this._lastFetched ||
-      (Date.now() - this._lastFetched.getTime()) > CoupleCalendarPanel.STALE_MS;
-    if (dataIsStale && uniqueIds.length) {
-      try {
-        await this._hass.callService("homeassistant", "update_entity", { entity_id: uniqueIds });
-      } catch (_) { /* non-fatal */ }
-    }
+    // No homeassistant.update_entity force-poll here: the calendars REST API
+    // below calls each entity's async_get_events directly, which already
+    // fetches live from the source. Forcing an update also spams the HA log
+    // with "Forced update failed. Component for <calendar> not loaded." for
+    // calendar platforms that don't support manual updates.
 
     try {
       const sStr = start.toISOString().replace(".000Z","Z");
@@ -825,12 +819,34 @@ class CoupleCalendarPanel extends HTMLElement {
     return `${ev?._who || ""}\x1f${ev?.summary || ""}\x1f${start}`;
   }
 
+  // Identity of an event independent of which calendar it came from, used to
+  // collapse the same event appearing on multiple calendars (e.g. a shared
+  // event synced to both partners' Google accounts). Title + start + end.
+  _dedupKey(ev) {
+    const s = ev?.start?.dateTime || ev?.start?.date || "";
+    const e = ev?.end?.dateTime   || ev?.end?.date   || "";
+    return `${(ev?.summary || "").trim().toLowerCase()}\x1f${s}\x1f${e}`;
+  }
+
   _filteredEvents() {
     const ignored = new Set(this._config?.ignoredEvents || []);
-    const base = this._activeFilter === "all"
+    let base = this._activeFilter === "all"
       ? this._events
       : this._events.filter(e => e._who === this._activeFilter);
-    return ignored.size ? base.filter(e => !ignored.has(this._eventKey(e))) : base;
+    if (ignored.size) base = base.filter(e => !ignored.has(this._eventKey(e)));
+
+    // Collapse duplicates that span calendars. Keeps the first copy in
+    // calendar order (so it shows that calendar's color). Default on.
+    if (this._config?.hideDuplicates !== false) {
+      const seen = new Set();
+      base = base.filter(e => {
+        const k = this._dedupKey(e);
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+    }
+    return base;
   }
 
   _eventsOnDay(day) {
@@ -1738,6 +1754,10 @@ class CoupleCalendarPanel extends HTMLElement {
               <option value="agenda" ${cfg.defaultView==="agenda"?"selected":""}>Agenda</option>
             </select>
           </div>
+          <div class="settings-row">
+            <label>Hide duplicate events <span style="font-weight:400;font-style:italic;opacity:0.7;font-size:11px;">— same event on two calendars</span></label>
+            <input type="checkbox" id="s-hide-dupes" ${cfg.hideDuplicates!==false?"checked":""} style="width:20px;height:20px;cursor:pointer;accent-color:${firstColor};">
+          </div>
         </div>
 
         <div class="settings-section">
@@ -2025,6 +2045,7 @@ class CoupleCalendarPanel extends HTMLElement {
       timeFormat:     dr.querySelector("#s-time")?.value           || "12h",
       firstDayOfWeek: dr.querySelector("#s-fdow")?.value          ?? 0,
       defaultView:    dr.querySelector("#s-default-view")?.value   || "month",
+      hideDuplicates: dr.querySelector("#s-hide-dupes")?.checked ?? true,
       kioskMode,
       headerBadges,
       sidebarCards,
