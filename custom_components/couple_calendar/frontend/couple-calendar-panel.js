@@ -312,19 +312,15 @@ function buildStyles(cfg) {
   .week-event {
     position: absolute; border-radius: 6px;
     padding: 4px 7px; font-size: 12px; font-weight: 500; cursor: pointer;
-    /* clip (not hidden) so the box still clips its contents but does NOT become
-       a scroll container — that lets the sticky title below stick to the top of
-       the calendar's scroller instead of to this box. */
-    overflow: clip; z-index: 2; transition: opacity 0.1s;
+    overflow: hidden; z-index: 2; transition: opacity 0.1s;
     border-left: 3px solid rgba(255,255,255,0.25);
     box-sizing: border-box;
   }
   .week-event:active { opacity: 0.75; }
-  /* Keep the title visible while a tall event scrolls past the top of the grid,
-     so long events never show as an empty coloured box. It stays pinned to the
-     top of the viewport but is constrained to its own event box, so it scrolls
-     away once the event's bottom edge does. Harmless on short events. */
-  .week-event-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: sticky; top: 0; }
+  /* .week-event-title rides down within a tall event as it scrolls past the top
+     of the grid (via _pinWeekEventTitles) so long events never show as an empty
+     coloured box. No transition so it tracks the scroll position exactly. */
+  .week-event-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; will-change: transform; }
   .week-event-time  { font-size: 12px; opacity: 0.85; }
 
   /* ── Agenda view ── */
@@ -1382,6 +1378,16 @@ class CoupleCalendarPanel extends HTMLElement {
         const targetMin = earliestMin ?? 8 * 60;
         tg.scrollTop = Math.max(0, ((targetMin - 30) / 60) * HOUR_H);
       }
+
+      // Keep long-event titles visible as the grid scrolls past their top edge.
+      tg.addEventListener("scroll", () => {
+        if (this._pinRaf) return;
+        this._pinRaf = requestAnimationFrame(() => {
+          this._pinRaf = null;
+          this._pinWeekEventTitles();
+        });
+      }, { passive: true });
+      requestAnimationFrame(() => this._pinWeekEventTitles());
     }
 
     el.querySelectorAll(".week-event, .week-all-day-event").forEach(evEl =>
@@ -2360,6 +2366,26 @@ class CoupleCalendarPanel extends HTMLElement {
     const ws   = this._weekStart();
     const days = Array.from({ length: 7 }, (_, i) => addDays(ws, i));
     tg.scrollTo({ top: this._weekIdealScrollTop(tg, days), behavior: "smooth" });
+  }
+
+  // Keep the title of a tall event visible while its top edge is scrolled above
+  // the grid: slide the title down so it rides the top of the event's visible
+  // portion, clamped so it never leaves the event box. Runs on every scroll
+  // (manual or the auto-anchor), so a long event never shows as an empty box.
+  _pinWeekEventTitles() {
+    if (this._view !== "week") return;
+    const tg = this.shadowRoot.querySelector(".week-time-grid");
+    if (!tg) return;
+    const tgTop = tg.getBoundingClientRect().top;
+    this.shadowRoot.querySelectorAll(".week-event").forEach(evEl => {
+      const titleEl = evEl.querySelector(".week-event-title");
+      if (!titleEl) return;
+      const evRect      = evEl.getBoundingClientRect();
+      const hiddenAbove = tgTop - evRect.top;                         // >0 once the top edge is off-screen
+      const maxShift    = evEl.clientHeight - titleEl.offsetHeight - 6;
+      const shift       = Math.max(0, Math.min(hiddenAbove, maxShift));
+      titleEl.style.transform = shift > 0 ? `translateY(${shift}px)` : "";
+    });
   }
 
   // Where the week grid should sit: anchored to the earliest *upcoming* timed
