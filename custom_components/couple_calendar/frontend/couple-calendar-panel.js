@@ -312,12 +312,19 @@ function buildStyles(cfg) {
   .week-event {
     position: absolute; border-radius: 6px;
     padding: 4px 7px; font-size: 12px; font-weight: 500; cursor: pointer;
-    overflow: hidden; z-index: 2; transition: opacity 0.1s;
+    /* clip (not hidden) so the box still clips its contents but does NOT become
+       a scroll container — that lets the sticky title below stick to the top of
+       the calendar's scroller instead of to this box. */
+    overflow: clip; z-index: 2; transition: opacity 0.1s;
     border-left: 3px solid rgba(255,255,255,0.25);
     box-sizing: border-box;
   }
   .week-event:active { opacity: 0.75; }
-  .week-event-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Keep the title visible while a tall event scrolls past the top of the grid,
+     so long events never show as an empty coloured box. It stays pinned to the
+     top of the viewport but is constrained to its own event box, so it scrolls
+     away once the event's bottom edge does. Harmless on short events. */
+  .week-event-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: sticky; top: 0; }
   .week-event-time  { font-size: 12px; opacity: 0.85; }
 
   /* ── Agenda view ── */
