@@ -75,11 +75,18 @@ function buildStyles(cfg) {
   return `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   :host, .panel-root {
-    display: flex; flex-direction: row; height: 100%; width: 100%;
+    display: flex; flex-direction: row; width: 100%;
     font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
     background: ${p.bg}; color: ${p.text}; overflow: hidden;
     user-select: none; -webkit-user-select: none;
   }
+  /* Pin to the viewport height. HA mounts this panel (embed_iframe: False)
+     without always giving the host a definite height, so height:100% would
+     collapse and the 24 h time grid would push the whole PAGE into scrolling.
+     100dvh keeps the panel exactly one screen tall so only .week-time-grid
+     scrolls internally — nothing to scroll on a fixed wall display. */
+  :host { height: 100vh; height: 100dvh; }
+  .panel-root { height: 100%; }
 
   /* ── Header ── */
   .header {
