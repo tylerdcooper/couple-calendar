@@ -1349,9 +1349,9 @@ class CoupleCalendarPanel extends HTMLElement {
       if (prevScroll !== null) {
         tg.scrollTop = prevScroll;
       } else if (todayIdx !== -1) {
-        // Current week: follow the day. Keep "now" in view with recent events
-        // above and as much of what's coming up as possible below it.
-        tg.scrollTop = this._weekIdealScrollTop(tg, nowMin);
+        // Current week: anchor to the next upcoming event so we always show
+        // where we are in the day with as much of what's coming up as possible.
+        tg.scrollTop = this._weekIdealScrollTop(tg, days);
       } else {
         // A week we've navigated away to: no "now" to follow, so anchor to the
         // earliest timed event with ~30 min of breathing room above so its hour
@@ -2338,22 +2338,45 @@ class CoupleCalendarPanel extends HTMLElement {
     if (!nowLine) return;
     nowLine.style.top = `${newTop}px`;
 
-    // Follow the day: smooth-scroll so "now" stays in view. Imperceptible at
-    // 10 s intervals, and no DOM is rebuilt so there's nothing to jitter.
+    // Re-anchor to the next upcoming event so the view rolls forward as the day
+    // progresses (e.g. in the evening it moves to tomorrow morning's events).
+    // Smooth so it's imperceptible at 10 s intervals; no DOM is rebuilt.
     const tg = this.shadowRoot.querySelector(".week-time-grid");
-    if (tg) tg.scrollTo({ top: this._weekIdealScrollTop(tg, nowMin), behavior: "smooth" });
+    if (!tg) return;
+    const ws   = this._weekStart();
+    const days = Array.from({ length: 7 }, (_, i) => addDays(ws, i));
+    tg.scrollTo({ top: this._weekIdealScrollTop(tg, days), behavior: "smooth" });
   }
 
-  // Where the week grid should sit so the current time is visible with recent
-  // events above and as much of the upcoming day as possible below. "Now" rides
-  // ~30 % down the viewport, clamped so we never scroll past midnight into
-  // blank space (late in the day it settles on the tail end of the day).
-  _weekIdealScrollTop(tg, nowMin) {
+  // Where the week grid should sit: anchored to the earliest *upcoming* timed
+  // event across the visible week, with ~30 min of breathing room above so its
+  // hour label shows. During the day this keeps the next event near the top;
+  // in the evening, once today is done, it rolls forward to tomorrow morning.
+  // Clamped so it never scrolls past the end of the day into blank space, and
+  // falls back to the current time if nothing is coming up.
+  _weekIdealScrollTop(tg, days) {
     const HOUR_H = 60;
-    const nowTop = (nowMin / 60) * HOUR_H;
     const vh     = tg.clientHeight || 420;
-    const maxTop = Math.max(0, 24 * HOUR_H - vh);
-    return Math.max(0, Math.min(nowTop - vh * 0.3, maxTop));
+    const now    = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+
+    let targetMin = null;
+    for (const d of days) {
+      const dayVsToday = startOfDay(d).getTime() - startOfDay(now).getTime();
+      if (dayVsToday < 0) continue;                 // a day already behind us
+      for (const ev of this._eventsOnDay(d)) {
+        if (!ev.start?.dateTime) continue;
+        const s = new Date(ev.start.dateTime);
+        const m = s.getHours() * 60 + s.getMinutes();
+        if (dayVsToday === 0 && m < nowMin) continue; // earlier today, already past
+        if (targetMin === null || m < targetMin) targetMin = m;
+      }
+    }
+
+    const anchorMin = targetMin ?? nowMin;          // nothing upcoming → keep "now" in view
+    const top       = ((anchorMin - 30) / 60) * HOUR_H;
+    const maxTop    = Math.max(0, 24 * HOUR_H - vh);
+    return Math.max(0, Math.min(top, maxTop));
   }
 
   // ── localStorage ──────────────────────────────────────────────────────
