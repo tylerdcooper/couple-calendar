@@ -1348,10 +1348,14 @@ class CoupleCalendarPanel extends HTMLElement {
     if (tg) {
       if (prevScroll !== null) {
         tg.scrollTop = prevScroll;
+      } else if (todayIdx !== -1) {
+        // Current week: follow the day. Keep "now" in view with recent events
+        // above and as much of what's coming up as possible below it.
+        tg.scrollTop = this._weekIdealScrollTop(tg, nowMin);
       } else {
-        // Default: earliest timed event of the week sits near the top,
-        // with ~30 min of breathing room above so the hour label is visible.
-        // Falls back to 8 AM if there are no timed events this week.
+        // A week we've navigated away to: no "now" to follow, so anchor to the
+        // earliest timed event with ~30 min of breathing room above so its hour
+        // label is visible. Falls back to 8 AM if there are no timed events.
         let earliestMin = null;
         for (const d of days) {
           for (const ev of this._eventsOnDay(d)) {
@@ -2315,8 +2319,8 @@ class CoupleCalendarPanel extends HTMLElement {
         this._renderHeader();
         this._renderMainContent();
       } else if (this._view === "week") {
-        // Move the now-line in-place. Do NOT auto-scroll — the week view
-        // anchors to the earliest event of the week, not the current time.
+        // Move the now-line in-place and gently follow the day so the current
+        // time stays in view. No DOM rebuild, so there's no scroll jitter.
         this._updateWeekNowLine();
       }
     }, 10_000);
@@ -2328,9 +2332,28 @@ class CoupleCalendarPanel extends HTMLElement {
     const HOUR_H = 60;
     const newTop = (nowMin / 60) * HOUR_H;
 
-    // Move the now-line element without rebuilding any DOM or scrolling.
+    // The now-line only exists when today is in the visible week. If it's not
+    // there, we've navigated to another week — leave the scroll position alone.
     const nowLine = this.shadowRoot.querySelector(".now-line");
-    if (nowLine) nowLine.style.top = `${newTop}px`;
+    if (!nowLine) return;
+    nowLine.style.top = `${newTop}px`;
+
+    // Follow the day: smooth-scroll so "now" stays in view. Imperceptible at
+    // 10 s intervals, and no DOM is rebuilt so there's nothing to jitter.
+    const tg = this.shadowRoot.querySelector(".week-time-grid");
+    if (tg) tg.scrollTo({ top: this._weekIdealScrollTop(tg, nowMin), behavior: "smooth" });
+  }
+
+  // Where the week grid should sit so the current time is visible with recent
+  // events above and as much of the upcoming day as possible below. "Now" rides
+  // ~30 % down the viewport, clamped so we never scroll past midnight into
+  // blank space (late in the day it settles on the tail end of the day).
+  _weekIdealScrollTop(tg, nowMin) {
+    const HOUR_H = 60;
+    const nowTop = (nowMin / 60) * HOUR_H;
+    const vh     = tg.clientHeight || 420;
+    const maxTop = Math.max(0, 24 * HOUR_H - vh);
+    return Math.max(0, Math.min(nowTop - vh * 0.3, maxTop));
   }
 
   // ── localStorage ──────────────────────────────────────────────────────
