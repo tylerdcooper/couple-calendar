@@ -320,7 +320,7 @@ function buildStyles(cfg) {
   /* .week-event-title rides down within a tall event as it scrolls past the top
      of the grid (via _pinWeekEventTitles) so long events never show as an empty
      coloured box. No transition so it tracks the scroll position exactly. */
-  .week-event-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; will-change: transform; }
+  .week-event-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .week-event-time  { font-size: 12px; opacity: 0.85; }
 
   /* ── Agenda view ── */
@@ -2383,7 +2383,9 @@ class CoupleCalendarPanel extends HTMLElement {
       const evRect      = evEl.getBoundingClientRect();
       const hiddenAbove = tgTop - evRect.top;                         // >0 once the top edge is off-screen
       const maxShift    = evEl.clientHeight - titleEl.offsetHeight - 6;
-      const shift       = Math.max(0, Math.min(hiddenAbove, maxShift));
+      // Round to whole pixels — a fractional translate blurs the text and can
+      // clip the last glyph, which looks like a squished / cut-off name.
+      const shift       = Math.round(Math.max(0, Math.min(hiddenAbove, maxShift)));
       titleEl.style.transform = shift > 0 ? `translateY(${shift}px)` : "";
     });
   }
